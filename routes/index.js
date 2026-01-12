@@ -1,10 +1,18 @@
+
+// routes/index.js
 const express = require('express');
-const path = require('path');
 const router = express.Router();
 
-// Serve the index.html file for the root route
+console.log('✅ routes/index.js loaded');
+
 router.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '../views/index.html'));
+  // If you prefer JSON here, change to res.json({ msg: 'Hello from Railway!' });
+  res.send('Hello from Railway!');
+});
+
+router.get('/health', (req, res) => {
+  // App-level /health exists for infra; this is fine for app-level checks.
+  res.json({ status: 'ok', ts: new Date().toISOString() });
 });
 
 module.exports = router;
