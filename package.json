@@ -1,15 +1,23 @@
 
 {
-  "name": "nodejs-app",
+  "name": "save-to-plant-signup",
   "version": "1.0.0",
-  "description": "A minimal Node.js web application.",
-  "main": "app.js",
-  "author": "alphasec",
+  "description": "Save to Plant - Signup API (Node.js on Railway + MySQL)",
+  "main": "server.js",
+  "author": "Christine Au",
   "license": "MIT",
-  "dependencies": {
-    "express": "^4.19.2"
-  },
+  "type": "commonjs",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "NODE_ENV=development node server.js",
+    "postinstall": "echo \"Postinstall: no build step\""
+  },
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "express": "^4.19.2",
+    "mysql2": "^3.9.7"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
