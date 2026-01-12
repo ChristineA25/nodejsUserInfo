@@ -1,20 +1,21 @@
-
 const express = require('express');
 const path = require('path');
-const app = express();
+const indexRouter = require('./routes/index');
 
-// static files (optional)
+const app = express();
+const PORT = 3000;
+
+// Serve static files from the "public" directory
 app.use(express.static(path.join(__dirname, 'public')));
 
-// root route
-app.get('/', (req, res) => {
-  res.send('Hello from Railway!');
-});
+// Use the router for handling routes
+app.use('/', indexRouter);
 
-// IMPORTANT: use Railway PORT and bind 0.0.0.0
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server listening on ${PORT}`);
-});
+// Catch-all route for handling 404 errors
+app.use((req, res, next) => {
+    res.status(404).sendFile(path.join(__dirname, 'views', '404.html'));
+  });
 
-module.exports = app; // optional if tests or separate server file
+app.listen(PORT, () => {
+  console.log(`Server running at http://localhost:${PORT}/`);
+});
