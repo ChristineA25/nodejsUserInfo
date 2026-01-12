@@ -7,7 +7,7 @@ console.log('✅ routes/index.js loaded');
 
 router.get('/', (req, res) => {
   // If you prefer JSON here, change to res.json({ msg: 'Hello from Railway!' });
-  res.send('Hello from Railway!');
+  res.send('Hello from Railway route!');
 });
 
 router.get('/health', (req, res) => {
