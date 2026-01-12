@@ -7,7 +7,7 @@ import mysql from "mysql2/promise";
 dotenv.config();
 
 const app = express();
-app.use(cors({ origin: "*" })); // tighten for prod
+app.use(cors({ origin: "*" })); // tighten for production
 app.use(express.json());
 
 const pool = mysql.createPool({
@@ -21,6 +21,7 @@ const pool = mysql.createPool({
   queueLimit: 0,
 });
 
+// Health check
 app.get("/health", async (_req, res) => {
   try {
     const [rows] = await pool.query("SELECT 1 AS ok");
@@ -30,48 +31,51 @@ app.get("/health", async (_req, res) => {
   }
 });
 
-app.get("/api/items", async (_req, res) => {
-  const [rows] = await pool.query("SELECT id, name, price FROM items ORDER BY id DESC");
-  res.json(rows);
-});
+/**
+ * ✅ New Signup Endpoint
+ * Inserts user details into loginTable
+ */
+app.post("/api/signup", async (req, res) => {
+  const {
+    username,
+    password,
+    email,
+    phone_country_code,
+    phone_number,
+    secuQuestion1,
+    secuAns1,
+    secuQuestion2,
+    secuAns2,
+    secuQuestion3,
+    secuAns3,
+  } = req.body;
 
-app.post("/api/items", async (req, res) => {
-  const { name, price } = req.body;
-  if (!name || price == null) {
-    return res.status(400).json({ error: "name and price are required" });
+  if (!username || !password || !email) {
+    return res.status(400).json({ error: "username, password, and email are required" });
   }
+
   try {
     const [result] = await pool.execute(
-      "INSERT INTO items (name, price) VALUES (?, ?)",
-      [name, price]
+      `INSERT INTO loginTable 
+       (username, password, email, phone_country_code, phone_number, 
+        secuQuestion1, secuAns1, secuQuestion2, secuAns2, secuQuestion3, secuAns3)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        username,
+        password,
+        email,
+        phone_country_code || null,
+        phone_number || null,
+        secuQuestion1 || null,
+        secuAns1 || null,
+        secuQuestion2 || null,
+        secuAns2 || null,
+        secuQuestion3 || null,
+        secuAns3 || null,
+      ]
     );
-    res.status(201).json({ id: result.insertId, name, price });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
-app.put("/api/items/:id", async (req, res) => {
-  const { id } = req.params;
-  const { name, price } = req.body;
-  try {
-    const [result] = await pool.execute(
-      "UPDATE items SET name = ?, price = ? WHERE id = ?",
-      [name, price, id]
-    );
-    if (result.affectedRows === 0) return res.status(404).json({ error: "Not found" });
-    res.json({ id: Number(id), name, price });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.delete("/api/items/:id", async (req, res) => {
-  const { id } = req.params;
-  try {
-    const [result] = await pool.execute("DELETE FROM items WHERE id = ?", [id]);
-    if (result.affectedRows === 0) return res.status(404).json({ error: "Not found" });
-    res.status(204).send();
+    res.status(201).json({ userID: result.insertId, username, email });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
