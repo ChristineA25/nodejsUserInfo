@@ -31,10 +31,7 @@ app.get("/health", async (_req, res) => {
   }
 });
 
-/**
- * ✅ New Signup Endpoint
- * Inserts user details into loginTable
- */
+
 app.post("/api/signup", async (req, res) => {
   const {
     username,
@@ -50,8 +47,11 @@ app.post("/api/signup", async (req, res) => {
     secuAns3,
   } = req.body;
 
-  if (!username || !password || !email) {
-    return res.status(400).json({ error: "username, password, and email are required" });
+  if (!username && !email && !phone_number) {
+    return res.status(400).json({ error: "At least one identifier is required" });
+  }
+  if (!password) {
+    return res.status(400).json({ error: "Password is required" });
   }
 
   try {
@@ -61,9 +61,9 @@ app.post("/api/signup", async (req, res) => {
         secuQuestion1, secuAns1, secuQuestion2, secuAns2, secuQuestion3, secuAns3)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        username,
+        username || null,
         password,
-        email,
+        email || null,
         phone_country_code || null,
         phone_number || null,
         secuQuestion1 || null,
@@ -75,7 +75,7 @@ app.post("/api/signup", async (req, res) => {
       ]
     );
 
-    res.status(201).json({ userID: result.insertId, username, email });
+    res.status(201).json({ userID: result.insertId });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
