@@ -3,7 +3,12 @@ const path = require('path');
 const indexRouter = require('./routes/index');
 
 const app = express();
-const PORT = 3000;
+// Listen on Railway's PORT
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
 
 // Serve static files from the "public" directory
 app.use(express.static(path.join(__dirname, 'public')));
@@ -24,11 +29,4 @@ app.listen(PORT, () => {
 // Root route
 app.get('/', (req, res) => {
   res.send('Hello from Railway!');
-});
-
-
-// Listen on Railway's PORT
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
 });
