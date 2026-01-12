@@ -32,6 +32,8 @@ app.get("/health", async (_req, res) => {
 });
 
 
+
+// Add this in src/index.js
 app.post("/api/signup", async (req, res) => {
   const {
     username,
@@ -44,14 +46,11 @@ app.post("/api/signup", async (req, res) => {
     secuQuestion2,
     secuAns2,
     secuQuestion3,
-    secuAns3,
+    secuAns3
   } = req.body;
 
-  if (!username && !email && !phone_number) {
-    return res.status(400).json({ error: "At least one identifier is required" });
-  }
-  if (!password) {
-    return res.status(400).json({ error: "Password is required" });
+  if (!username || !password || !email) {
+    return res.status(400).json({ error: "username, password, and email are required" });
   }
 
   try {
@@ -61,9 +60,9 @@ app.post("/api/signup", async (req, res) => {
         secuQuestion1, secuAns1, secuQuestion2, secuAns2, secuQuestion3, secuAns3)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        username || null,
-        password,
-        email || null,
+        username,
+        password, // ⚠️ Hash this in production!
+        email,
         phone_country_code || null,
         phone_number || null,
         secuQuestion1 || null,
@@ -71,15 +70,16 @@ app.post("/api/signup", async (req, res) => {
         secuQuestion2 || null,
         secuAns2 || null,
         secuQuestion3 || null,
-        secuAns3 || null,
+        secuAns3 || null
       ]
     );
 
-    res.status(201).json({ userID: result.insertId });
+    res.status(201).json({ id: result.insertId, username, email });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`API listening on :${port}`));
