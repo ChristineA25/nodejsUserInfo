@@ -50,3 +50,45 @@ app.listen(PORT, '0.0.0.0', () => {
     console.warn('⚠️ indexRouter was not mounted. Only static files and /health are active.');
   }
 });
+
+
+// Example only (CommonJS); adapt to your project structure & error handling
+app.post('/api/signup', async (req, res) => {
+  const {
+    username, password, email,
+    phone_country_code, phone_number,
+    secuQuestion1, secuAns1, secuQuestion2, secuAns2, secuQuestion3, secuAns3
+  } = req.body;
+
+  if (!password) return res.status(400).json({ error: 'password is required' });
+
+  // TODO: hash the password (e.g., bcrypt.hash(password, 12))
+  const hashed = password; // replace with real hash
+
+  const sql = `
+    INSERT INTO loginTable
+      (username, password, email, phone_country_code, phone_number,
+       secuQuestion1, secuAns1, secuQuestion2, secuAns2, secuQuestion3, secuAns3)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `;
+  const params = [
+    username ?? null,
+    hashed,
+    email ?? null,
+    phone_country_code ?? null,
+    phone_number ?? null,
+    secuQuestion1 ?? null,
+    secuAns1 ?? null,
+    secuQuestion2 ?? null,
+    secuAns2 ?? null,
+    secuQuestion3 ?? null,
+    secuAns3 ?? null,
+  ];
+
+  try {
+    const [result] = await pool.execute(sql, params);
+    return res.status(201).json({ userID: result.insertId });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
