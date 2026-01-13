@@ -1,19 +1,16 @@
 {
   "name": "nodejs-app",
   "version": "1.0.0",
-  "description": "A minimal Node.js web application.",
+  "private": true,
   "main": "app.js",
-  "author": "alphasec",
-  "license": "MIT",
-  "dependencies": {
-    "express": "^4.19.2",
-<<<<<<< HEAD
-    "mysql2": "^3.16.0"
-=======
-    "mysql2": "^3.10.0"
->>>>>>> ec8ac0bddb2ed181b264d6545ae1cf76c1dd6830
-  },
+  "type": "commonjs",
   "scripts": {
-    "start": "node app.js"
+    "start": "node app.js",
+    "dev": "nodemon app.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.19.2",
+    "mysql2": "^3.9.7"
   }
 }
