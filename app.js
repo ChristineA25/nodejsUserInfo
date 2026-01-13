@@ -1,150 +1,129 @@
 
 // app.js
 const express = require('express');
-const bcrypt = require('bcryptjs');
-const crypto = require('crypto');
-const { pool } = require('./db');
+const path = require('path');
+const bcrypt = require('bcryptjs');            // make sure bcryptjs is in dependencies
+const { pool } = require('./db');              // db.js must export a mysql2/promise pool
 
 const app = express();
+
+// Parse JSON (needed for req.body)
 app.use(express.json());
 
-// AES encryption settings
-// Use a 32-byte key for AES-256. If you store it as 64 hex chars in ENV, read with 'hex'.
-const ENCRYPTION_KEY =
-  process.env.ENCRYPTION_KEY ||
-  'df693b8a07dda28fd08824a9fd9fbf1b2cfbc37568d1fa6ab613038beddf24e4'; // 64 hex chars = 32 bytes
-const IV_LENGTH = 16; // bytes
+// Simple health endpoint for Railway
+app.get('/health', (req, res) => {
+  res.status(200).send('ok');
+});
 
-function encrypt(plainText) {
-  const iv = crypto.randomBytes(IV_LENGTH);        // iv must be 16 bytes for aes-256-cbc
-  const key = Buffer.from(ENCRYPTION_KEY, 'hex');  // tell Buffer the key is hex-encoded
-  const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
-  const encrypted = Buffer.concat([cipher.update(plainText, 'utf8'), cipher.final()]);
-  // Return iv + ciphertext in hex for storage or transport
-  return iv.toString('hex') + ':' + encrypted.toString('hex');
+// Serve static files from "public"
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Try to attach the index router (optional)
+let indexRouterMounted = false;
+try {
+  const indexRouter = require('./routes/index');
+  app.use('/', indexRouter);
+  indexRouterMounted = true;
+  console.log('✅ indexRouter mounted');
+} catch (err) {
+  console.error('❌ Failed to load ./routes/index:', err);
 }
 
-// Helpers
-const asTrimmedOrNull = (v) =>
-  v === undefined || v === null ? null : String(v).trim();
+// --- API routes ---
 
-const normalizeCountryCode = (v) => {
-  const s = asTrimmedOrNull(v);
-  if (s === null) return null;
-  // Store without '+' to match your screenshots ("44"). Remove this replace() if you prefer "+44".
-  return s.replace(/^\+/, '');
-};
-
-app.get('/', (req, res) => {
-  res.send('Welcome to the Save to Plant API. Use /health or /api/signup.');
-});
-
-// Health check
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', ts: new Date().toISOString() });
-});
-
-// Sign-up route
+/**
+ * POST /api/signup
+ * Expects JSON body including a client-supplied userID (from Flutter).
+ * Example body:
+ * {
+ *   "userID": 2,
+ *   "username": "railway_test",
+ *   "password": "Passw0rd!123",
+ *   "email": "railway@example.com",
+ *   "phone_country_code": "+44",
+ *   "phone_number": "07123456789",
+ *   "secuQuestion1": "First pet?",
+ *   "secuAns1": "Milo",
+ *   "secuQuestion2": "Birth city?",
+ *   "secuAns2": "Hong Kong",
+ *   "secuQuestion3": "Favourite colour?",
+ *   "secuAns3": "Blue"
+ * }
+ */
 app.post('/api/signup', async (req, res) => {
   try {
     const {
-      username,
-      password,
-      email,
-      phone_country_code,
-      phone_number,
-      secuQuestion1,
-      secuAns1,
-      secuQuestion2,
-      secuAns2,
-      secuQuestion3,
-      secuAns3,
-      // Optional: if the client sends its own click time (clientTimestamp),
-      // we will include it in the encrypted record too.
-      clientTimestamp,
-
-      // NEW: allow client to send a program/user-generated identifier
-      // We check both 'useID' and 'userID' to be flexible with client payloads.
-      useID,
-      userID: clientUserID
+      userID,
+      username, password, email,
+      phone_country_code, phone_number,
+      secuQuestion1, secuAns1, secuQuestion2, secuAns2, secuQuestion3, secuAns3
     } = req.body || {};
 
+    // Basic validation — adjust as needed
+    if (userID === undefined || userID === null || userID === '') {
+      return res.status(400).json({ error: 'userID_required' });
+    }
     if (!password) {
       return res.status(400).json({ error: 'password_required' });
     }
 
-    // Hash password (bcrypt)
-    const hashedPassword = await bcrypt.hash(String(password), 12);
+    // Hash the password (bcryptjs)
+    const hashed = await bcrypt.hash(String(password), 12);
 
-    // Build payload to encrypt (your existing behavior)
-    const payloadToEncrypt = {
-      username: asTrimmedOrNull(username),
-      email: asTrimmedOrNull(email),
-      phone_country_code: asTrimmedOrNull(phone_country_code),
-      phone_number: asTrimmedOrNull(phone_number),
-      secuQuestion1: asTrimmedOrNull(secuQuestion1),
-      secuAns1: asTrimmedOrNull(secuAns1),
-      secuQuestion2: asTrimmedOrNull(secuQuestion2),
-      secuAns2: asTrimmedOrNull(secuAns2),
-      secuQuestion3: asTrimmedOrNull(secuQuestion3),
-      secuAns3: asTrimmedOrNull(secuAns3),
-      serverTimestamp: new Date().toISOString(),
-      ...(clientTimestamp ? { clientTimestamp: String(clientTimestamp) } : {})
-    };
-
-    // Generate encrypted userID (existing logic)
-    const encryptedUserID = encrypt(JSON.stringify(payloadToEncrypt));
-
-    // NEW: Choose what to store in loginTable.userID
-    // Priority: client-sent 'useID' -> client-sent 'userID' -> encryptedUserID
-    const preferredClientID = asTrimmedOrNull(useID) || asTrimmedOrNull(clientUserID);
-    const finalUserID = preferredClientID || encryptedUserID;
-
-    // Prepare SQL + params
+    // IMPORTANT: Insert userID explicitly since your MySQL column requires it
     const sql = `
       INSERT INTO loginTable
-      (userID, username, password, email, phone_country_code, phone_number,
-       secuQuestion1, secuAns1, secuQuestion2, secuAns2, secuQuestion3, secuAns3)
+        (userID, username, password, email, phone_country_code, phone_number,
+         secuQuestion1, secuAns1, secuQuestion2, secuAns2, secuQuestion3, secuAns3)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
-
     const params = [
-      finalUserID,                              // <-- will be the client 'useID' if provided
-      asTrimmedOrNull(username),
-      hashedPassword,
-      asTrimmedOrNull(email),
-      normalizeCountryCode(phone_country_code), // strips leading '+'
-      asTrimmedOrNull(phone_number),
-      asTrimmedOrNull(secuQuestion1),
-      asTrimmedOrNull(secuAns1),
-      asTrimmedOrNull(secuQuestion2),
-      asTrimmedOrNull(secuAns2),
-      asTrimmedOrNull(secuQuestion3),
-      asTrimmedOrNull(secuAns3)
+      userID,
+      username ?? null,
+      hashed,
+      email ?? null,
+      phone_country_code ?? null,
+      phone_number ?? null,
+      secuQuestion1 ?? null,
+      secuAns1 ?? null,
+      secuQuestion2 ?? null,
+      secuAns2 ?? null,
+      secuQuestion3 ?? null,
+      secuAns3 ?? null,
     ];
 
-    await pool.execute(sql, params);
+    const [result] = await pool.execute(sql, params);
 
-    // Respond with both the stored ID and the encrypted one for reference
-    return res.status(201).json({
-      userID: finalUserID,           // what was actually stored in DB
-      encryptedUserID,               // the AES-256-CBC ID you also generate
-      stored: finalUserID === encryptedUserID ? 'encrypted' : 'client-provided'
-    });
+    // Return the userID provided by client
+    return res.status(201).json({ userID });
   } catch (err) {
-    console.error(err && err.stack ? err.stack : err);
+    const msg = (err && err.message) ? err.message : 'unknown_error';
+    const code = (err && err.code) ? err.code : null;
 
-    // Handle duplicate key (MySQL error code 1062) if userID is PK/unique
-    if (err && (err.code === 'ER_DUP_ENTRY' || err.errno === 1062)) {
-      return res.status(409).json({ error: 'duplicate_userID' });
+    // Example: ER_DUP_ENTRY for unique constraint violation
+    if (code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ error: 'duplicate_identifier' });
     }
 
-    const msg = err && err.message ? err.message : 'unknown_error';
     return res.status(500).json({ error: msg });
   }
 });
 
+// 404 catch-all (after routes and static)
+app.use((req, res) => {
+  const fallback404 = path.join(__dirname, 'views', '404.html');
+  res.status(404).sendFile(fallback404, (sendErr) => {
+    if (sendErr) {
+      res.status(404).type('text').send('404 – Not Found');
+    }
+  });
+});
+
+// Single listener — Railway sets PORT for you
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ Server running on http://0.0.0.0:${PORT}`);
+  console.log(`✅ Server listening on http://0.0.0.0:${PORT}`);
+  if (!indexRouterMounted) {
+    console.warn('⚠️ indexRouter was not mounted. Only static files and /health + /api/signup are active.');
+  }
 });
