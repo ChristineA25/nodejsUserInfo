@@ -53,7 +53,7 @@ app.listen(PORT, '0.0.0.0', () => {
 
 
 // Example only (CommonJS); adapt to your project structure & error handling
-app.post('/api/signup', async (req, res) => {
+app.post('/signup', async (req, res) => {
   const {
     username, password, email,
     phone_country_code, phone_number,
