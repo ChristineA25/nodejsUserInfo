@@ -1,17 +1,29 @@
 
-// app.js
+// app.js (CommonJS)
 const express = require('express');
 const path = require('path');
-const bcrypt = require('bcryptjs');            // make sure bcryptjs is in dependencies
-const { pool } = require('./db');              // db.js must export a mysql2/promise pool
+const bcrypt = require('bcryptjs');
+const cors = require('cors');
+const { pool } = require('./db');
 
 const app = express();
 
-// Parse JSON (needed for req.body)
+// CORS: restrict to your web origins in production
+app.use(cors({
+  origin: [
+    'http://localhost:5173',                  // dev (adjust to your local port)
+    'https://your-flutter-web-domain.example' // prod site (replace)
+  ],
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Accept', 'x-api-key'],
+}));
+
+// Parse JSON once
 app.use(express.json());
 
 // Simple health endpoint for Railway
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
+  // If you prefer JSON: res.json({ ok: true, ts: new Date().toISOString() });
   res.status(200).send('ok');
 });
 
@@ -21,7 +33,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Try to attach the index router (optional)
 let indexRouterMounted = false;
 try {
-  const indexRouter = require('./routes/index');
+  const indexRouter = require('./routes/index'); // ensure this file exists
   app.use('/', indexRouter);
   indexRouterMounted = true;
   console.log('✅ indexRouter mounted');
@@ -36,7 +48,7 @@ try {
  * Expects JSON body including a client-supplied userID (from Flutter).
  * Example body:
  * {
- *   "userID": 2,
+ *   "userID": "123456789012345",
  *   "username": "railway_test",
  *   "password": "Passw0rd!123",
  *   "email": "railway@example.com",
@@ -92,7 +104,7 @@ app.post('/api/signup', async (req, res) => {
       secuAns3 ?? null,
     ];
 
-    const [result] = await pool.execute(sql, params);
+    await pool.execute(sql, params);
 
     // Return the userID provided by client
     return res.status(201).json({ userID });
@@ -105,6 +117,7 @@ app.post('/api/signup', async (req, res) => {
       return res.status(409).json({ error: 'duplicate_identifier' });
     }
 
+    console.error('signup error:', err);
     return res.status(500).json({ error: msg });
   }
 });
