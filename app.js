@@ -26,6 +26,10 @@ function encrypt(plainText) {
   return iv.toString('hex') + ':' + encrypted.toString('hex');
 }
 
+app.get('/', (req, res) => {
+  res.send('Welcome to the Save to Plant API. Use /health or /api/signup.');
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', ts: new Date().toISOString() });
