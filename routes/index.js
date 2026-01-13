@@ -13,6 +13,6 @@ router.get('/health', (req, res) => {
   res.json({ status: 'ok', ts: new Date().toISOString() });
 });
 
-// Add your /api/signup handler here later (we prepared one previously)
+// Later: router.post('/api/signup', ...)
 
 module.exports = router;
