@@ -7,7 +7,11 @@
   "license": "MIT",
   "dependencies": {
     "express": "^4.19.2",
+<<<<<<< HEAD
     "mysql2": "^3.16.0"
+=======
+    "mysql2": "^3.10.0"
+>>>>>>> ec8ac0bddb2ed181b264d6545ae1cf76c1dd6830
   },
   "scripts": {
     "start": "node app.js"
