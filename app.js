@@ -10,7 +10,7 @@ const app = express();
 app.use(express.json());
 
 // AES encryption settings
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || '12345678901234567890123456789012'; // 32 chars
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'df693b8a07dda28fd08824a9fd9fbf1b2cfbc37568d1fa6ab613038beddf24e4'; // 32 chars
 const IV_LENGTH = 16;
 
 function encrypt(text) {
