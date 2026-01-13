@@ -2,21 +2,8 @@
 // app.js
 const express = require('express');
 const path = require('path');
-
-// TODO: make sure you actually create and export a MySQL pool somewhere.
-// Example (adjust to your Railway MySQL credentials):
-// const mysql = require('mysql2/promise');
-// const pool = mysql.createPool({
-//   host: process.env.MYSQLHOST,
-//   user: process.env.MYSQLUSER,
-//   password: process.env.MYSQLPASSWORD,
-//   database: process.env.MYSQLDATABASE,
-//   port: process.env.MYSQLPORT || 3306,
-//   waitForConnections: true,
-//   connectionLimit: 10,
-//   queueLimit: 0,
-// });
-const { pool } = require('./db'); // or replace with inline creation above
+const bcrypt = require('bcryptjs');            // make sure bcryptjs is in dependencies
+const { pool } = require('./db');              // db.js must export a mysql2/promise pool
 
 const app = express();
 
@@ -43,30 +30,55 @@ try {
 }
 
 // --- API routes ---
-// Use the path that Flutter expects:
+
+/**
+ * POST /api/signup
+ * Expects JSON body including a client-supplied userID (from Flutter).
+ * Example body:
+ * {
+ *   "userID": 2,
+ *   "username": "railway_test",
+ *   "password": "Passw0rd!123",
+ *   "email": "railway@example.com",
+ *   "phone_country_code": "+44",
+ *   "phone_number": "07123456789",
+ *   "secuQuestion1": "First pet?",
+ *   "secuAns1": "Milo",
+ *   "secuQuestion2": "Birth city?",
+ *   "secuAns2": "Hong Kong",
+ *   "secuQuestion3": "Favourite colour?",
+ *   "secuAns3": "Blue"
+ * }
+ */
 app.post('/api/signup', async (req, res) => {
   try {
     const {
+      userID,
       username, password, email,
       phone_country_code, phone_number,
       secuQuestion1, secuAns1, secuQuestion2, secuAns2, secuQuestion3, secuAns3
     } = req.body || {};
 
+    // Basic validation — adjust as needed
+    if (userID === undefined || userID === null || userID === '') {
+      return res.status(400).json({ error: 'userID_required' });
+    }
     if (!password) {
       return res.status(400).json({ error: 'password_required' });
     }
 
-    // TODO: hash the password (bcrypt/argon2)
-    // const hashed = await bcrypt.hash(password, 12);
-    const hashed = password; // replace with real hash
+    // Hash the password (bcryptjs)
+    const hashed = await bcrypt.hash(String(password), 12);
 
+    // IMPORTANT: Insert userID explicitly since your MySQL column requires it
     const sql = `
       INSERT INTO loginTable
-        (username, password, email, phone_country_code, phone_number,
+        (userID, username, password, email, phone_country_code, phone_number,
          secuQuestion1, secuAns1, secuQuestion2, secuAns2, secuQuestion3, secuAns3)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     const params = [
+      userID,
       username ?? null,
       hashed,
       email ?? null,
@@ -81,9 +93,10 @@ app.post('/api/signup', async (req, res) => {
     ];
 
     const [result] = await pool.execute(sql, params);
-    return res.status(201).json({ userID: result.insertId });
+
+    // Return the userID provided by client
+    return res.status(201).json({ userID });
   } catch (err) {
-    // Map some common MySQL errors to friendlier codes
     const msg = (err && err.message) ? err.message : 'unknown_error';
     const code = (err && err.code) ? err.code : null;
 
