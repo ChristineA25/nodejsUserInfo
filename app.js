@@ -40,6 +40,7 @@ const express = require('express');
 const path = require('path');
 const bcrypt = require('bcryptjs');            // make sure bcryptjs is in dependencies
 const { pool } = require('./db');              // db.js must export a mysql2/promise pool
+const { pool, pingDB } = require('./db');
 
 const app = express();
 
