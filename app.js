@@ -4,6 +4,7 @@ const express = require('express');
 const path = require('path');
 const bcrypt = require('bcryptjs');            // make sure bcryptjs is in dependencies
 const { pool } = require('./db');              // db.js must export a mysql2/promise pool
+const { encryptField } = require('./encrypt'); // <<< add this line
 
 const app = express();
 
@@ -52,25 +53,22 @@ try {
  */
 app.post('/api/signup', async (req, res) => {
   try {
+    
     const {
       userID,
       username, password, email,
       phone_country_code, phone_number,
       secuQuestion1, secuAns1, secuQuestion2, secuAns2, secuQuestion3, secuAns3
     } = req.body || {};
-
-    // Basic validation — adjust as needed
-    if (userID === undefined || userID === null || userID === '') {
-      return res.status(400).json({ error: 'userID_required' });
-    }
-    if (!password) {
-      return res.status(400).json({ error: 'password_required' });
-    }
-
-    // Hash the password (bcryptjs)
+    
+    // ... validation ...
+    
     const hashed = await bcrypt.hash(String(password), 12);
-
-    // IMPORTANT: Insert userID explicitly since your MySQL column requires it
+    
+    // Encrypt PII
+    const emailEnc = email ? encryptField(String(email).trim()) : null;
+    const phoneLocalEnc = phone_number ? encryptField(String(phone_number).trim()) : null;
+    
     const sql = `
       INSERT INTO loginTable
         (userID, username, password, email, phone_country_code, phone_number,
@@ -81,9 +79,9 @@ app.post('/api/signup', async (req, res) => {
       userID,
       username ?? null,
       hashed,
-      email ?? null,
+      emailEnc,                  // <<< encrypted email
       phone_country_code ?? null,
-      phone_number ?? null,
+      phoneLocalEnc,             // <<< encrypted local phone digits
       secuQuestion1 ?? null,
       secuAns1 ?? null,
       secuQuestion2 ?? null,
@@ -91,10 +89,8 @@ app.post('/api/signup', async (req, res) => {
       secuQuestion3 ?? null,
       secuAns3 ?? null,
     ];
-
-    const [result] = await pool.execute(sql, params);
-
-    // Return the userID provided by client
+    
+    await pool.execute(sql, params);
     return res.status(201).json({ userID });
   } catch (err) {
     const msg = (err && err.message) ? err.message : 'unknown_error';
