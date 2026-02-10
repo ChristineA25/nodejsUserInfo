@@ -86,16 +86,23 @@ try {
  *   "secuAns3": "Blue"
  * }
  */
+
 app.post('/api/signup', async (req, res) => {
   try {
     const {
       userID,
-      username, password, email,
-      phone_country_code, phone_number,
-      secuQuestion1, secuAns1, secuQuestion2, secuAns2, secuQuestion3, secuAns3
+      identifierType,     // "username" | "email" | "phone" (from Flutter)
+      username,
+      email,              // plaintext email from client
+      phone_country_code, // KEEP EXACTLY AS SENT, e.g., "+44"
+      phone_number,       // local digits only from client
+      password,
+      secuQuestion1, secuAns1,
+      secuQuestion2, secuAns2,
+      secuQuestion3, secuAns3,
     } = req.body || {};
 
-    // Basic validation — adjust as needed
+    // --- basic checks ---
     if (userID === undefined || userID === null || userID === '') {
       return res.status(400).json({ error: 'userID_required' });
     }
@@ -103,47 +110,80 @@ app.post('/api/signup', async (req, res) => {
       return res.status(400).json({ error: 'password_required' });
     }
 
-    // Hash the password (bcryptjs)
+    // Optional: ensure a coherent mode
+    const idType = String(identifierType || '').toLowerCase();
+    if (idType && !['username','email','phone'].includes(idType)) {
+      return res.status(400).json({ error: 'identifierType_invalid' });
+    }
+
+    // --- build plaintext + encrypted shadows ---
+    let usernameToStore = null;
+    let emailPlain = null, emailEnc = null;
+    let phoneCodeRaw = null, phoneLocalPlain = null, phoneLocalEnc = null;
+
+    if (idType === 'username') {
+      if (!username) return res.status(400).json({ error: 'username_required' });
+      usernameToStore = String(username).trim();
+    }
+
+    if (idType === 'email' || (!idType && email)) {
+      if (!email) return res.status(400).json({ error: 'email_required' });
+      emailPlain = String(email).trim();     // stays plaintext for checks/UI
+      emailEnc   = encryptField(emailPlain); // encrypted shadow
+    }
+
+    if (idType === 'phone' || (!idType && phone_country_code && phone_number)) {
+      if (!phone_country_code) return res.status(400).json({ error: 'phone_country_code_required' });
+      // DO NOT STRIP '+' — store exactly as user typed
+      phoneCodeRaw = String(phone_country_code); // e.g., "+44"
+
+      if (!phone_number || !/^\d+$/.test(String(phone_number))) {
+        return res.status(400).json({ error: 'phone_number_digits_only' });
+      }
+      phoneLocalPlain = String(phone_number).trim();  // plaintext for UI/queries
+      if (phoneLocalPlain.length < 4 || phoneLocalPlain.length > 14) {
+        return res.status(400).json({ error: 'phone_number_invalid_length' });
+      }
+      phoneLocalEnc = encryptField(phoneLocalPlain);  // encrypted shadow
+    }
+
+    // --- hash password ---
     const hashed = await bcrypt.hash(String(password), 12);
 
-    // IMPORTANT: Insert userID explicitly since your MySQL column requires it
+    // --- INSERT with both plaintext + encrypted shadows ---
     const sql = `
       INSERT INTO loginTable
-        (userID, username, password, email, phone_country_code, phone_number,
+        (userID, username, password,
+         email, email_enc,
+         phone_country_code, phone_number, phone_number_enc,
          secuQuestion1, secuAns1, secuQuestion2, secuAns2, secuQuestion3, secuAns3)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     const params = [
       userID,
-      username ?? null,
+      usernameToStore,
       hashed,
-      email ?? null,
-      phone_country_code ?? null,
-      phone_number ?? null,
-      secuQuestion1 ?? null,
-      secuAns1 ?? null,
-      secuQuestion2 ?? null,
-      secuAns2 ?? null,
-      secuQuestion3 ?? null,
-      secuAns3 ?? null,
+      emailPlain,
+      emailEnc,
+      phoneCodeRaw,       // <-- EXACT form input (e.g., "+44")
+      phoneLocalPlain,    // <-- plaintext digits
+      phoneLocalEnc,      // <-- encrypted shadow
+      secuQuestion1 ?? null, secuAns1 ?? null,
+      secuQuestion2 ?? null, secuAns2 ?? null,
+      secuQuestion3 ?? null, secuAns3 ?? null,
     ];
 
-    const [result] = await pool.execute(sql, params);
-
-    // Return the userID provided by client
+    await pool.execute(sql, params);
     return res.status(201).json({ userID });
   } catch (err) {
-    const msg = (err && err.message) ? err.message : 'unknown_error';
-    const code = (err && err.code) ? err.code : null;
-
-    // Example: ER_DUP_ENTRY for unique constraint violation
-    if (code === 'ER_DUP_ENTRY') {
+    if (err && err.code === 'ER_DUP_ENTRY') {
       return res.status(409).json({ error: 'duplicate_identifier' });
     }
-
-    return res.status(500).json({ error: msg });
+    console.error('signup error:', err?.message || err);
+    return res.status(500).json({ error: 'server_error' });
   }
 });
+
 
 // 404 catch-all (after routes and static)
 app.use((req, res) => {
