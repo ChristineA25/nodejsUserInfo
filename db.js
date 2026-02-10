@@ -1,33 +1,26 @@
 
-// db.js (CJS)
+// db.js
 const mysql = require('mysql2/promise');
 
-// Support both Railway naming styles
-const host = process.env.MYSQLHOST || process.env.MYSQL_HOST;
-const port = Number(process.env.MYSQLPORT || process.env.MYSQL_PORT || 3306);
-const user = process.env.MYSQLUSER || process.env.MYSQL_USER;
-const password = process.env.MYSQLPASSWORD || process.env.MYSQL_PASSWORD;
-const database = process.env.MYSQLDATABASE || process.env.MYSQL_DATABASE;
-
-console.log('DB config -> host=%s port=%s user=%s db=%s', host, port, user, database);
-
 const pool = mysql.createPool({
-  host,
-  port,
-  user,
-  password,
-  database,
-  ssl: process.env.MYSQL_SSL === '1' ? { rejectUnauthorized: false } : undefined,
+  host: process.env.DB_HOST,    // e.g., 'containers-us-west-...railway.app'
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  port: Number(process.env.DB_PORT || 3306),
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
-  enableKeepAlive: true,
-  keepAliveInitialDelay: 10000,
+  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : undefined
 });
 
 async function pingDB() {
-  const [rows] = await pool.query('SELECT 1 AS ok');
-  return rows?.[0]?.ok === 1;
+  const conn = await pool.getConnection();
+  try {
+    await conn.ping();
+  } finally {
+    conn.release();
+  }
 }
 
 module.exports = { pool, pingDB };
