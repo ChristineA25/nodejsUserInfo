@@ -1,7 +1,6 @@
 
 // routes/index.js
 const express = require('express');
-const { pool, pingDB } = require('./db');
 const router = express.Router();
 
 // Root route
