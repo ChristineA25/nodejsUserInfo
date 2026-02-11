@@ -19,11 +19,6 @@ app.use(express.json({ limit: '10kb' }));
 /* ------------------------------------------------------------------ */
 /*                          Key Management                             */
 /* ------------------------------------------------------------------ */
-/**
- * We use one base64 key for deterministic tokens (HMAC) and one for bcrypt salt cost.
- * - DETERMINISTIC_KEY: 32 bytes base64 (used for HMAC-SHA256 -> base64 output)
- *   Same input + same key => same token (deterministic), suitable for UNIQUE index.
- */
 function loadKeyFromEnv(envName, expectedLen) {
   const b64 = process.env[envName];
   if (!b64) throw new Error(`${envName}_missing`);
@@ -34,7 +29,7 @@ function loadKeyFromEnv(envName, expectedLen) {
   return buf;
 }
 
-let DET_KEY; // for deterministic tokens (HMAC)
+let DET_KEY;
 try {
   DET_KEY = loadKeyFromEnv('DETERMINISTIC_KEY', 32);
 } catch (e) {
@@ -44,33 +39,23 @@ try {
 /* ------------------------------------------------------------------ */
 /*                      Deterministic “Tokenization”                   */
 /* ------------------------------------------------------------------ */
-/**
- * Returns a deterministic, keyed token (base64 of 32-byte HMAC-SHA256).
- * This is not reversible cryptography (not ciphertext), but:
- *  - It's deterministic for equality checks and UNIQUE constraints.
- *  - It hides the plaintext without the key.
- */
 function detTokenBase64(plain) {
   if (plain === null || plain === undefined) return null;
   if (!DET_KEY) throw new Error('DETERMINISTIC_KEY_missing');
   const mac = crypto.createHmac('sha256', DET_KEY)
     .update(String(plain), 'utf8')
-    .digest(); // 32 bytes
-  return mac.toString('base64'); // 44 chars
+    .digest();
+  return mac.toString('base64');
 }
 
 /* ------------------------------------------------------------------ */
-/*                        Normalization Helpers                        */
+/*                      Normalization Helpers                          */
 /* ------------------------------------------------------------------ */
 function normalizeEmail(email) {
   if (!email) return null;
   return String(email).trim().toLowerCase();
 }
 
-/**
- * Build/validate E.164: "+<digits>", typically 6..15 digits after '+'.
- * Prefer `phoneE164` from client if valid; else combine CC + local.
- */
 function buildE164({ phoneE164, phone_country_code, phone_number }) {
   const isValidE164 = (v) => typeof v === 'string' && /^\+\d{6,15}$/.test(v);
 
@@ -80,8 +65,9 @@ function buildE164({ phoneE164, phone_country_code, phone_number }) {
   const localRaw = (phone_number || '').toString().trim();
 
   if (!ccRaw.startsWith('+')) throw new Error('invalid_country_code');
-  const ccDigits = ccRaw.replace(/[^\d]/g, '');     // keep digits only
-  const localDigits = localRaw.replace(/\D+/g, ''); // keep digits only
+
+  const ccDigits = ccRaw.replace(/[^\d]/g, '');
+  const localDigits = localRaw.replace(/\D+/g, '');
 
   const combined = `+${ccDigits}${localDigits}`;
   if (!isValidE164(combined)) throw new Error('invalid_e164_combination');
@@ -94,6 +80,7 @@ function buildE164({ phoneE164, phone_country_code, phone_number }) {
 app.get('/health', (req, res) => res.status(200).send('ok'));
 app.use(express.static(path.join(__dirname, 'public')));
 
+/* Routes Mount */
 let indexRouterMounted = false;
 try {
   const indexRouter = require('./routes/index');
@@ -107,28 +94,6 @@ try {
 /* ------------------------------------------------------------------ */
 /*                             API: Signup                             */
 /* ------------------------------------------------------------------ */
-/**
- * POST /api/signup
- * Body (from Flutter):
- * {
- *   "userID": "123456789012",
- *   "identifierType": "username" | "email" | "phone",
- *   "username": "...",                 // when identifierType === "username"
- *   "email": "...",                    // when identifierType === "email"
- *   "phone_country_code": "+44",       // when identifierType === "phone"
- *   "phone_number": "7123456789",      // local (no +CC)
- *   "phoneE164": "+447123456789",      // optional; preferred if valid
- *   "password": "Passw0rd!123",
- *   "secuQuestion1": "...", "secuAns1": "...",
- *   "secuQuestion2": "...", "secuAns2": "...",
- *   "secuQuestion3": "...", "secuAns3": "..."
- * }
- *
- * Behavior:
- * - email_enc        = deterministic token of normalized email        (base64 HMAC)
- * - phone_number_enc = deterministic token of E.164 phone            (base64 HMAC)
- * - password         = bcrypt hash (non-deterministic, secure)
- */
 app.post('/api/signup', async (req, res) => {
   try {
     const {
@@ -139,27 +104,24 @@ app.post('/api/signup', async (req, res) => {
       secuQuestion1, secuAns1, secuQuestion2, secuAns2, secuQuestion3, secuAns3
     } = req.body || {};
 
-    // Basic validation
     if (!userID)    return res.status(400).json({ error: 'userID_required' });
     if (!password)  return res.status(400).json({ error: 'password_required' });
 
-    if (identifierType === 'username' && !username) {
+    if (identifierType === 'username' && !username)
       return res.status(400).json({ error: 'username_required' });
-    }
-    if (identifierType === 'email' && !email) {
-      return res.status(400).json({ error: 'email_required' });
-    }
-    if (identifierType === 'phone' && !phone_number && !phoneE164) {
-      return res.status(400).json({ error: 'phone_number_required' });
-    }
 
-    // 1) Hash the password (best practice; do NOT make deterministic)
+    if (identifierType === 'email' && !email)
+      return res.status(400).json({ error: 'email_required' });
+
+    if (identifierType === 'phone' && !phone_number && !phoneE164)
+      return res.status(400).json({ error: 'phone_number_required' });
+
     const passwordHash = await bcrypt.hash(String(password), 12);
 
-    // 2) Compute deterministic tokens for email and phone
-    let emailEnc = null;            // deterministic token for normalized email
-    let phoneEnc = null;            // deterministic token for E.164 phone
-    let phoneE164Final = null;      // the canonical E.164 we tokenized
+    // Deterministic tokens
+    let emailEnc = null;
+    let phoneEnc = null;
+    let phoneE164Final = null;
 
     try {
       if (email) {
@@ -176,10 +138,9 @@ app.post('/api/signup', async (req, res) => {
         phoneEnc = detTokenBase64(phoneE164Final);
       }
     } catch (tokErr) {
-      return res.status(500).json({ error: tokErr.message || 'tokenization_failed' });
+      return res.status(500).json({ error: tokErr.message });
     }
 
-    // 3) Insert into DB (your schema from the screenshot)
     const sql = `
       INSERT INTO loginTable
         (userID, username, password, phone_country_code,
@@ -199,28 +160,109 @@ app.post('/api/signup', async (req, res) => {
       secuAns2 ?? null,
       secuQuestion3 ?? null,
       secuAns3 ?? null,
-      emailEnc,       // deterministic token for email
-      phoneEnc        // deterministic token for E.164 phone
+      emailEnc,
+      phoneEnc
     ];
 
     const [result] = await pool.execute(sql, params);
     return res.status(201).json({ userID });
+
   } catch (err) {
     const msg  = (err && err.message) ? err.message : 'unknown_error';
     const code = (err && err.code)    ? err.code    : null;
 
     if (code === 'ER_DUP_ENTRY') {
-      // Detect which UNIQUE constraint triggered and send a specific field + friendly message
       const raw = (err.sqlMessage || err.message || '').toLowerCase();
       let field = 'identifier';
       if (raw.includes('email_enc')) field = 'email';
       else if (raw.includes('phone_number_enc')) field = 'phone';
-      else if (raw.includes('username')) field = 'username'; // if UNIQUE(username) exists
-      else if (raw.includes('secuans1') || raw.includes('secuans2') || raw.includes('secuans3')) field = 'security answer';
-      const message = `${field} already in use. Please use another or use other provided options to sign up`;
+      else if (raw.includes('username')) field = 'username';
+      const message = `${field} already in use.`;
       return res.status(409).json({ error: 'duplicate_identifier', field, message });
     }
+
     return res.status(500).json({ error: msg });
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/*                             API: LOGIN                              */
+/* ------------------------------------------------------------------ */
+app.post('/api/login', async (req, res) => {
+  try {
+    const {
+      identifier,     // email OR username OR raw phone digits
+      password,
+      phone_country_code,
+      phone_number,
+      phoneE164
+    } = req.body || {};
+
+    if (!identifier)
+      return res.status(400).json({ error: 'identifier_required' });
+
+    if (!password)
+      return res.status(400).json({ error: 'password_required' });
+
+    let where = '';
+    let value = null;
+
+    // Detect email
+    if (identifier.includes('@')) {
+      const norm = normalizeEmail(identifier);
+      const emailEnc = detTokenBase64(norm);
+      where = 'email_enc = ?';
+      value = emailEnc;
+    }
+    // Detect phone
+    else if (/^[\d+]+$/.test(identifier)) {
+      let e164Final;
+
+      try {
+        e164Final = buildE164({
+          phoneE164,
+          phone_country_code,
+          phone_number: phone_number || identifier // allow Flutter to send raw digits as identifier
+        });
+      } catch (err) {
+        return res.status(400).json({ error: 'invalid_phone_number' });
+      }
+
+      const phoneEnc = detTokenBase64(e164Final);
+      where = 'phone_number_enc = ?';
+      value = phoneEnc;
+    }
+    // Otherwise username
+    else {
+      where = 'username = ?';
+      value = identifier;
+    }
+
+    const sql = `
+      SELECT userID, username, password
+      FROM loginTable
+      WHERE ${where}
+      LIMIT 1
+    `;
+    const [rows] = await pool.execute(sql, [value]);
+
+    if (!rows || rows.length === 0)
+      return res.status(404).json({ error: 'identifier_not_found' });
+
+    const user = rows[0];
+
+    const match = await bcrypt.compare(password, user.password);
+    if (!match)
+      return res.status(400).json({ error: 'invalid_password' });
+
+    return res.status(200).json({
+      userID: user.userID,
+      username: user.username || null
+    });
+
+  } catch (err) {
+    console.error('LOGIN ERROR:', err);
+    return res.status(500).json({ error: 'server_error' });
   }
 });
 
@@ -230,7 +272,8 @@ app.post('/api/signup', async (req, res) => {
 app.use((req, res) => {
   const fallback404 = path.join(__dirname, 'views', '404.html');
   res.status(404).sendFile(fallback404, (sendErr) => {
-    if (sendErr) res.status(404).type('text').send('404 – Not Found');
+    if (sendErr)
+      res.status(404).type('text').send('404 – Not Found');
   });
 });
 
