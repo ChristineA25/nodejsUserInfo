@@ -186,17 +186,19 @@ app.post('/api/signup', async (req, res) => {
   }
 });
 
+
 /* ------------------------------------------------------------------ */
 /*                             API: LOGIN                              */
 /* ------------------------------------------------------------------ */
 app.post('/api/login', async (req, res) => {
   try {
     const {
-      identifier,     // email OR username OR raw phone digits
+      identifier,        // email OR username OR raw phone digits
       password,
       phone_country_code,
       phone_number,
-      phoneE164
+      phoneE164,
+      identifierType     // NEW (optional): "email" | "phone" | "username"
     } = req.body || {};
 
     if (!identifier)
@@ -208,35 +210,62 @@ app.post('/api/login', async (req, res) => {
     let where = '';
     let value = null;
 
-    // Detect email
-    if (identifier.includes('@')) {
+    // If the client tells us the identifier type, use that path.
+    // Otherwise, fall back to the original auto-detect logic.
+    const explicit = (identifierType || '').toString().trim().toLowerCase();
+
+    if (explicit === 'email') {
       const norm = normalizeEmail(identifier);
       const emailEnc = detTokenBase64(norm);
       where = 'email_enc = ?';
       value = emailEnc;
-    }
-    // Detect phone
-    else if (/^[\d+]+$/.test(identifier)) {
-      let e164Final;
 
+    } else if (explicit === 'phone') {
+      let e164Final;
       try {
         e164Final = buildE164({
           phoneE164,
           phone_country_code,
-          phone_number: phone_number || identifier // allow Flutter to send raw digits as identifier
+          phone_number: phone_number || identifier // allow raw digits as identifier
         });
       } catch (err) {
         return res.status(400).json({ error: 'invalid_phone_number' });
       }
-
       const phoneEnc = detTokenBase64(e164Final);
       where = 'phone_number_enc = ?';
       value = phoneEnc;
-    }
-    // Otherwise username
-    else {
+
+    } else if (explicit === 'username') {
       where = 'username = ?';
       value = identifier;
+
+    } else {
+      // --- Fallback: original auto-detect ---
+      if (identifier.includes('@')) {
+        const norm = normalizeEmail(identifier);
+        const emailEnc = detTokenBase64(norm);
+        where = 'email_enc = ?';
+        value = emailEnc;
+
+      } else if (/^[\d+]+$/.test(identifier)) {
+        let e164Final;
+        try {
+          e164Final = buildE164({
+            phoneE164,
+            phone_country_code,
+            phone_number: phone_number || identifier
+          });
+        } catch (err) {
+          return res.status(400).json({ error: 'invalid_phone_number' });
+        }
+        const phoneEnc = detTokenBase64(e164Final);
+        where = 'phone_number_enc = ?';
+        value = phoneEnc;
+
+      } else {
+        where = 'username = ?';
+        value = identifier;
+      }
     }
 
     const sql = `
@@ -266,6 +295,7 @@ app.post('/api/login', async (req, res) => {
     return res.status(500).json({ error: 'server_error' });
   }
 });
+
 
 /* ------------------------------------------------------------------ */
 /*                        404 & Server Listen                          */
