@@ -1,4 +1,8 @@
-require('dotenv').config();
+// Only load .env during local development
+if (process.env.NODE_ENV !== 'production') {
+  try { require('dotenv').config(); } catch (_) {}
+}
+
 // app.js
 const express = require('express');
 const path = require('path');
