@@ -1,3 +1,4 @@
+
 // Only load .env during local development
 if (process.env.NODE_ENV !== 'production') {
   try { require('dotenv').config(); } catch (_) {}
@@ -6,8 +7,8 @@ if (process.env.NODE_ENV !== 'production') {
 // app.js
 const express = require('express');
 const path = require('path');
-const bcrypt = require('bcryptjs');            // make sure bcryptjs is in dependencies
-const crypto = require('crypto');              // for AES-256-GCM encryption
+const bcrypt = require('bcryptjs');            // password hashing
+const crypto = require('crypto');              // AES-256-GCM for encryption
 const { pool } = require('./db');              // db.js must export a mysql2/promise pool
 
 const app = express();
@@ -78,12 +79,14 @@ try {
  * Expects JSON body including a client-supplied userID (from Flutter).
  * Example body:
  * {
- *   "userID": 2,
- *   "username": "railway_test",
+ *   "userID": "123456789012",
+ *   "identifierType": "username" | "email" | "phone",
+ *   "username": "railway_test",          // when identifierType === "username"
+ *   "email": "railway@example.com",      // when identifierType === "email"
+ *   "phone_country_code": "+44",         // when identifierType === "phone"
+ *   "phone_number": "07123456789",       // local part only (no +CC)
+ *   "phoneE164": "+447123456789",        // optional normalized (not stored unless you add a column)
  *   "password": "Passw0rd!123",
- *   "email": "railway@example.com",
- *   "phone_country_code": "+44",
- *   "phone_number": "07123456789",
  *   "secuQuestion1": "First pet?",
  *   "secuAns1": "Milo",
  *   "secuQuestion2": "Birth city?",
@@ -96,8 +99,9 @@ app.post('/api/signup', async (req, res) => {
   try {
     const {
       userID,
+      identifierType,
       username, password, email,
-      phone_country_code, phone_number,
+      phone_country_code, phone_number, phoneE164,
       secuQuestion1, secuAns1, secuQuestion2, secuAns2, secuQuestion3, secuAns3
     } = req.body || {};
 
@@ -107,6 +111,17 @@ app.post('/api/signup', async (req, res) => {
     }
     if (!password) {
       return res.status(400).json({ error: 'password_required' });
+    }
+
+    // Optional: enforce identifierType coherence
+    if (identifierType === 'username' && !username) {
+      return res.status(400).json({ error: 'username_required' });
+    }
+    if (identifierType === 'email' && !email) {
+      return res.status(400).json({ error: 'email_required' });
+    }
+    if (identifierType === 'phone' && !phone_number) {
+      return res.status(400).json({ error: 'phone_number_required' });
     }
 
     // Hash the password (bcryptjs)
@@ -131,30 +146,29 @@ app.post('/api/signup', async (req, res) => {
       return res.status(500).json({ error: encErr.message || 'encryption_failed' });
     }
 
-    // IMPORTANT: Insert userID explicitly since your MySQL column requires it
+    // IMPORTANT: Plain columns `email` and `phone_number` have been DROPPED.
+    // Insert only the encrypted fields plus your remaining metadata columns.
     const sql = `
       INSERT INTO loginTable
-        (userID, username, password, email, phone_country_code, phone_number,
+        (userID, username, password, phone_country_code,
          secuQuestion1, secuAns1, secuQuestion2, secuAns2, secuQuestion3, secuAns3,
          email_enc, phone_number_enc)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     const params = [
       userID,
       username ?? null,
       hashed,
-      email ?? null,
       phone_country_code ?? null,
-      phone_number ?? null,
       secuQuestion1 ?? null,
       secuAns1 ?? null,
       secuQuestion2 ?? null,
       secuAns2 ?? null,
       secuQuestion3 ?? null,
       secuAns3 ?? null,
-      emailEnc,            // NEW encrypted email
-      phoneEnc,            // NEW encrypted phone (no country code)
+      emailEnc,            // encrypted email
+      phoneEnc,            // encrypted phone (local part only)
     ];
 
     const [result] = await pool.execute(sql, params);
