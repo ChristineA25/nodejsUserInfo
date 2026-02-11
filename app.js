@@ -1,59 +1,87 @@
 
+// app.js
+// --------------------------------------------------------------------------------------
+// Production-ready Express app with deterministic AES‑SIV encryption for email & phone.
+// - email_enc, phone_number_enc: AES‑SIV (deterministic, same input -> same ciphertext)
+// - password: bcrypt hash with random salt (NON-deterministic, as it should be)
+// Requirements:
+//   npm i express bcryptjs @stablelib/aes-siv path
+//   process.env.ENCRYPTION_SIV_KEY = base64(64 bytes)
+//   db.js must export { pool } from mysql2/promise
+// --------------------------------------------------------------------------------------
+
 // Only load .env during local development
 if (process.env.NODE_ENV !== 'production') {
   try { require('dotenv').config(); } catch (_) {}
 }
 
-// app.js
 const express = require('express');
 const path = require('path');
-const bcrypt = require('bcryptjs');            // password hashing
-const crypto = require('crypto');              // AES-256-GCM for encryption
-const { pool } = require('./db');              // db.js must export a mysql2/promise pool
+const bcrypt = require('bcryptjs');         // password hashing (salted, non-deterministic)
+const { AES_SIV } = require('@stablelib/aes-siv');
+const { pool } = require('./db');           // db.js must export a mysql2/promise pool
 
 const app = express();
 
 // Parse JSON (needed for req.body)
 app.use(express.json());
 
-/**
- * Encrypts plain text using AES-256-GCM.
- * Requires process.env.ENCRYPTION_KEY to be a base64 string that decodes to 32 bytes.
- * Uses a random 12-byte IV for each encryption.
- * Returns a base64-packed string: "iv:ciphertext:tag".
- */
-function encryptToBase64(plainText) {
-  if (plainText === null || plainText === undefined) return null;
-
-  const keyB64 = process.env.ENCRYPTION_KEY;
-  if (!keyB64) {
-    throw new Error('ENCRYPTION_KEY_missing');
-  }
-
+// --------------------------------------------------------------------------------------
+// AES‑SIV deterministic helpers
+// --------------------------------------------------------------------------------------
+function getSivKey() {
+  const keyB64 = process.env.ENCRYPTION_SIV_KEY;
+  if (!keyB64) throw new Error('ENCRYPTION_SIV_KEY_missing');
   const key = Buffer.from(keyB64, 'base64');
-  if (key.length !== 32) {
-    throw new Error('ENCRYPTION_KEY_must_be_32_bytes_base64');
+  if (key.length !== 64) {
+    // AES‑SIV uses two 256‑bit subkeys internally → 64‑byte master key recommended
+    throw new Error('ENCRYPTION_SIV_KEY_must_be_64_bytes_base64');
   }
-
-  // 12-byte IV is recommended for GCM
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-
-  const ciphertext = Buffer.concat([
-    cipher.update(String(plainText), 'utf8'),
-    cipher.final(),
-  ]);
-
-  const authTag = cipher.getAuthTag();
-
-  return [
-    iv.toString('base64'),
-    ciphertext.toString('base64'),
-    authTag.toString('base64'),
-  ].join(':');
+  return new Uint8Array(key);
 }
 
-// Simple health endpoint for Railway
+/**
+ * Deterministic AEAD encryption with AES‑SIV:
+ * - Same plaintext (+ same AAD) -> same ciphertext for a given key.
+ * - No random IV/nonce is required or used.
+ * - Returns base64 ciphertext.
+ * - `associatedData` is an optional array of strings/Uint8Arrays for domain separation.
+ */
+function encryptDeterministicToBase64(plainText, associatedData = []) {
+  if (plainText === null || plainText === undefined) return null;
+  const key = getSivKey();
+  const siv = new AES_SIV(key);
+
+  const pt = Buffer.from(String(plainText), 'utf8');
+  const aad = (associatedData || []).map((s) =>
+    s instanceof Uint8Array ? s : Buffer.from(String(s), 'utf8')
+  );
+
+  const ct = siv.seal(pt, aad); // Uint8Array
+  return Buffer.from(ct).toString('base64');
+}
+
+/**
+ * AES‑SIV decryption helper (optional for admin tools).
+ */
+function decryptDeterministicFromBase64(b64, associatedData = []) {
+  if (b64 === null || b64 === undefined) return null;
+  const key = getSivKey();
+  const siv = new AES_SIV(key);
+
+  const ct = Buffer.from(String(b64), 'base64');
+  const aad = (associatedData || []).map((s) =>
+    s instanceof Uint8Array ? s : Buffer.from(String(s), 'utf8')
+  );
+
+  const pt = siv.open(new Uint8Array(ct), aad);
+  if (!pt) throw new Error('siv_decryption_failed');
+  return Buffer.from(pt).toString('utf8');
+}
+
+// --------------------------------------------------------------------------------------
+// Health + Static + Optional index router
+// --------------------------------------------------------------------------------------
 app.get('/health', (req, res) => {
   res.status(200).send('ok');
 });
@@ -72,7 +100,9 @@ try {
   console.error('❌ Failed to load ./routes/index:', err);
 }
 
-// --- API routes ---
+// --------------------------------------------------------------------------------------
+// API routes
+// --------------------------------------------------------------------------------------
 
 /**
  * POST /api/signup
@@ -124,30 +154,36 @@ app.post('/api/signup', async (req, res) => {
       return res.status(400).json({ error: 'phone_number_required' });
     }
 
-    // Hash the password (bcryptjs)
+    // Hash the password (bcryptjs) — RANDOMIZED (kept intentionally non-deterministic)
     const hashed = await bcrypt.hash(String(password), 12);
 
-    // Prepare encrypted fields
-    // - email_enc: encrypt "email" as provided (nullable)
-    // - phone_number_enc: encrypt ONLY phone_number (exclude country code)
+    // Prepare deterministic encrypted fields (AES‑SIV)
+    // - email_enc: deterministic encryption of (trimmed) email
+    // - phone_number_enc: deterministic encryption of ONLY the local number (as per your schema)
     let emailEnc = null;
     let phoneEnc = null;
 
     try {
-      emailEnc = email ? encryptToBase64(email) : null;
+      // Normalize email minimally (trim); if you want case-insensitive equality,
+      // you can lower-case here, but you will be storing the lowercased value (encrypted).
+      const emailForEnc = email ? String(email).trim() : null;
+      emailEnc = emailForEnc
+        ? encryptDeterministicToBase64(emailForEnc, ['loginTable', 'email'])
+        : null;
 
-      // Optionally normalize to digits only. If you prefer raw as-entered (still no country code), use `phone_number` directly.
-      const rawPhone = phone_number ?? null; // no country code by design
-      // const normalizedPhone = rawPhone ? String(rawPhone).replace(/\D+/g, '') : null;
-      // phoneEnc = normalizedPhone ? encryptToBase64(normalizedPhone) : null;
-      phoneEnc = rawPhone ? encryptToBase64(String(rawPhone)) : null;
+      // Keep your original policy: store ONLY local phone (no country code) in *_enc
+      const localPhone = phone_number ?? null;
+      const phoneForEnc = localPhone ? String(localPhone) : null;
+      phoneEnc = phoneForEnc
+        ? encryptDeterministicToBase64(phoneForEnc, ['loginTable', 'phone'])
+        : null;
+
     } catch (encErr) {
       // If encryption fails, do not insert partial data
       return res.status(500).json({ error: encErr.message || 'encryption_failed' });
     }
 
-    // IMPORTANT: Plain columns `email` and `phone_number` have been DROPPED.
-    // Insert only the encrypted fields plus your remaining metadata columns.
+    // Insert only encrypted fields + remaining metadata columns
     const sql = `
       INSERT INTO loginTable
         (userID, username, password, phone_country_code,
@@ -159,7 +195,7 @@ app.post('/api/signup', async (req, res) => {
     const params = [
       userID,
       username ?? null,
-      hashed,
+      hashed,                              // bcrypt hash (non-deterministic by design)
       phone_country_code ?? null,
       secuQuestion1 ?? null,
       secuAns1 ?? null,
@@ -167,8 +203,8 @@ app.post('/api/signup', async (req, res) => {
       secuAns2 ?? null,
       secuQuestion3 ?? null,
       secuAns3 ?? null,
-      emailEnc,            // encrypted email
-      phoneEnc,            // encrypted phone (local part only)
+      emailEnc,                            // AES‑SIV deterministic ciphertext (base64)
+      phoneEnc,                            // AES‑SIV deterministic ciphertext (base64)
     ];
 
     const [result] = await pool.execute(sql, params);
@@ -188,7 +224,9 @@ app.post('/api/signup', async (req, res) => {
   }
 });
 
+// --------------------------------------------------------------------------------------
 // 404 catch-all (after routes and static)
+// --------------------------------------------------------------------------------------
 app.use((req, res) => {
   const fallback404 = path.join(__dirname, 'views', '404.html');
   res.status(404).sendFile(fallback404, (sendErr) => {
@@ -198,7 +236,9 @@ app.use((req, res) => {
   });
 });
 
+// --------------------------------------------------------------------------------------
 // Single listener — Railway sets PORT for you
+// --------------------------------------------------------------------------------------
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Server listening on http://0.0.0.0:${PORT}`);
