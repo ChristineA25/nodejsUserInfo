@@ -210,8 +210,14 @@ app.post('/api/signup', async (req, res) => {
     const code = (err && err.code)    ? err.code    : null;
 
     if (code === 'ER_DUP_ENTRY') {
-      // Your schema shows UNIQUE on email_enc and phone_number_enc
-      return res.status(409).json({ error: 'duplicate_identifier' });
+      // Detect which UNIQUE constraint triggered and send a specific field + friendly message
+      const raw = (err.sqlMessage || err.message || '').toLowerCase();
+      let field = 'identifier';
+      if (raw.includes('email_enc')) field = 'email';
+      else if (raw.includes('phone_number_enc')) field = 'phone';
+      else if (raw.includes('username')) field = 'username'; // if UNIQUE(username) exists
+      const message = `${field} already in use. Please use another or use other provided options to sign up`;
+      return res.status(409).json({ error: 'duplicate_identifier', field, message });
     }
     return res.status(500).json({ error: msg });
   }
