@@ -14,7 +14,7 @@ const crypto = require('crypto');
 const { pool } = require('./db'); // mysql2/promise pool
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '10kb' }));
 
 /* ------------------------------------------------------------------ */
 /*                          Key Management                             */
@@ -42,7 +42,7 @@ try {
 }
 
 /* ------------------------------------------------------------------ */
-/*                        Deterministic “Encryption”                   */
+/*                      Deterministic “Tokenization”                   */
 /* ------------------------------------------------------------------ */
 /**
  * Returns a deterministic, keyed token (base64 of 32-byte HMAC-SHA256).
@@ -80,7 +80,7 @@ function buildE164({ phoneE164, phone_country_code, phone_number }) {
   const localRaw = (phone_number || '').toString().trim();
 
   if (!ccRaw.startsWith('+')) throw new Error('invalid_country_code');
-  const ccDigits = ccRaw.replace(/[^\d]/g, '');   // keep digits only
+  const ccDigits = ccRaw.replace(/[^\d]/g, '');     // keep digits only
   const localDigits = localRaw.replace(/\D+/g, ''); // keep digits only
 
   const combined = `+${ccDigits}${localDigits}`;
