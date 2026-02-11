@@ -176,8 +176,9 @@ app.post('/api/signup', async (req, res) => {
       let field = 'identifier';
       if (raw.includes('email_enc')) field = 'email';
       else if (raw.includes('phone_number_enc')) field = 'phone';
-      else if (raw.includes('username')) field = 'username';
-      const message = `${field} already in use.`;
+      else if (raw.includes('username')) field = 'username'; // if UNIQUE(username) exists
+      else if (raw.includes('secuans1') || raw.includes('secuans2') || raw.includes('secuans3')) field = 'security answer';
+      const message = `${field} already in use. Please use another or use other provided options to sign up`;
       return res.status(409).json({ error: 'duplicate_identifier', field, message });
     }
 
