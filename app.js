@@ -296,6 +296,92 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+
+/* ------------------------------------------------------------------ */
+/*                         API: USER SETTINGS                          */
+/* ------------------------------------------------------------------ */
+app.get('/api/user/settings', async (req, res) => {
+  try {
+    const { userID } = req.query || {};
+    if (!userID) return res.status(400).json({ error: 'userID_required' });
+
+    const [rows] = await pool.execute(
+      `SELECT userID, monthlySalary, targetMonthlySaving, homeAddCode, workAddCode
+         FROM loginTable
+        WHERE userID = ?
+        LIMIT 1`,
+      [userID]
+    );
+
+    if (!rows || rows.length === 0)
+      return res.status(404).json({ error: 'user_not_found' });
+
+    const r = rows[0];
+    // MySQL may return DECIMAL as strings; normalize to numbers where possible.
+    const num = (v) => (v === null || v === undefined ? null : Number(v));
+
+    return res.json({
+      userID: r.userID,
+      monthlySalary: num(r.monthlySalary),
+      targetMonthlySaving: num(r.targetMonthlySaving),
+      homeAddCode: r.homeAddCode || null,
+      workAddCode: r.workAddCode || null
+    });
+  } catch (err) {
+    console.error('GET /api/user/settings error:', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
+app.put('/api/user/settings', async (req, res) => {
+  try {
+    const {
+      userID,
+      monthlySalary,
+      targetMonthlySaving,
+      homeAddCode,
+      workAddCode
+    } = req.body || {};
+
+    if (!userID) return res.status(400).json({ error: 'userID_required' });
+
+    const toNum = (v) => (v === '' || v === null || v === undefined ? null : Number(v));
+    const msNum = toNum(monthlySalary);
+    const tsNum = toNum(targetMonthlySaving);
+
+    if (msNum !== null && (Number.isNaN(msNum) || msNum < 0))
+      return res.status(400).json({ error: 'invalid_monthlySalary' });
+
+    if (tsNum !== null && (Number.isNaN(tsNum) || tsNum < 0))
+      return res.status(400).json({ error: 'invalid_targetMonthlySaving' });
+
+    const [result] = await pool.execute(
+      `UPDATE loginTable
+          SET monthlySalary = ?,
+              targetMonthlySaving = ?,
+              homeAddCode = ?,
+              workAddCode = ?
+        WHERE userID = ?`,
+      [msNum, tsNum, homeAddCode ?? null, workAddCode ?? null, userID]
+    );
+
+    if (result.affectedRows === 0)
+      return res.status(404).json({ error: 'user_not_found' });
+
+    return res.json({
+      ok: true,
+      userID,
+      monthlySalary: msNum,
+      targetMonthlySaving: tsNum,
+      homeAddCode: homeAddCode ?? null,
+      workAddCode: workAddCode ?? null
+    });
+  } catch (err) {
+    console.error('PUT /api/user/settings error:', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
 /* ------------------------------------------------------------------ */
 /*                        404 & Server Listen                          */
 /* ------------------------------------------------------------------ */
