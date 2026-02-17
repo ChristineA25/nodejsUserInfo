@@ -16,12 +16,6 @@ const { pool } = require('./db'); // mysql2/promise pool
 const app = express();
 app.use(express.json({ limit: '10kb' }));
 
-require('dotenv').config();
-const userRouter = require('./routes/user');
-
-app.use('/api/user', userRouter);
-
-
 /* ------------------------------------------------------------------ */
 /*                          Key Management                             */
 /* ------------------------------------------------------------------ */
@@ -81,27 +75,6 @@ function buildE164({ phoneE164, phone_country_code, phone_number }) {
 }
 
 
-// f031/app.js
-app.get('/api/user/blacklist/items', async (req, res) => {
-  try {
-    const { userID } = req.query || {};
-    if (!userID) return res.status(400).json({ error: 'userID_required' });
-
-    const sql = `
-      SELECT i.id, i.name, i.brand, i.quantity, i.feature, i.productColor, i.picWebsite
-      FROM userBlacklist ub
-      JOIN item i ON i.id = ub.itemID
-      WHERE ub.userID = ?
-      ORDER BY i.name ASC
-    `;
-    const [rows] = await pool.execute(sql, [String(userID)]);
-    res.json({ userID: String(userID), items: rows });
-  } catch (err) {
-    res.status(500).json({ error: 'server_error' });
-  }
-});
-
-
 /* ------------------------------------------------------------------ */
 /*                        API: USER BLACKLIST                          */
 /* ------------------------------------------------------------------ */
@@ -114,40 +87,6 @@ app.get('/api/user/blacklist/items', async (req, res) => {
  *  - 200 on GET/PUT/DELETE success
  *  - { error: '...' } for error payloads
  */
-
-
-const axios = require('axios'); // npm i axios
-
-// GET /api/user/blacklist/items  (API-aggregated)
-app.get('/api/user/blacklist/items', async (req, res) => {
-  try {
-    const { userID } = req.query || {};
-    if (!userID) return res.status(400).json({ error: 'userID_required' });
-
-    // 1) Get IDs from our local DB (which has userBlacklist)
-    const [rows] = await pool.execute(
-      'SELECT itemID FROM userBlacklist WHERE userID = ?',
-      [String(userID)]
-    );
-    const ids = rows.map(r => r.itemID);
-
-    if (ids.length === 0) return res.json({ userID: String(userID), items: [] });
-
-    // 2) Ask the items service (53a4) for details
-    const base = process.env.ITEMS_SERVICE_BASE; // e.g., https://nodejs-production-53a4.up.railway.app
-    const resp = await axios.post(`${base}/api/items/batchByIds`, { ids }, {
-      timeout: 8000,
-      headers: { 'Content-Type': 'application/json' },
-    });
-
-    // 3) Return items to the client
-    return res.json({ userID: String(userID), items: resp.data.items || [] });
-  } catch (err) {
-    console.error('GET /api/user/blacklist/items aggregation error:', err.message);
-    return res.status(500).json({ error: 'server_error' });
-  }
-});
-
 
 // GET all blacklisted itemIDs for a user
 app.get('/api/user/blacklist', async (req, res) => {
