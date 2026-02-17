@@ -91,6 +91,100 @@ try {
   console.error('❌ Failed to load ./routes/index:', err.message);
 }
 
+
+/* ------------------------------------------------------------------ */
+/*                         API: USER ALLERGENS                         */
+/* ------------------------------------------------------------------ */
+
+// GET all allergens for a user
+app.get('/api/user/allergens', async (req, res) => {
+  try {
+    const { userID } = req.query || {};
+    if (!userID) return res.status(400).json({ error: 'userID_required' });
+
+    const [rows] = await pool.execute(
+      'SELECT allergenID FROM userAllergen WHERE userID = ? ORDER BY allergenID ASC',
+      [userID]
+    );
+    const items = rows.map(r => String(r.allergenID));
+    return res.json({ userID, items });
+  } catch (err) {
+    console.error('GET /api/user/allergens error:', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
+// Add one allergen (insert)
+app.post('/api/user/allergens', async (req, res) => {
+  try {
+    const { userID, allergenID } = req.body || {};
+    if (!userID) return res.status(400).json({ error: 'userID_required' });
+    if (!allergenID) return res.status(400).json({ error: 'allergenID_required' });
+
+    await pool.execute(
+      'INSERT IGNORE INTO userAllergen (userID, allergenID) VALUES (?, ?)',
+      [userID, String(allergenID)]
+    );
+    return res.status(201).json({ ok: true, userID, allergenID: String(allergenID) });
+  } catch (err) {
+    console.error('POST /api/user/allergens error:', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
+// Delete one allergen (remove)
+app.delete('/api/user/allergens/:allergenID', async (req, res) => {
+  try {
+    const { userID } = req.query || {};
+    const { allergenID } = req.params || {};
+
+    if (!userID) return res.status(400).json({ error: 'userID_required' });
+    if (!allergenID) return res.status(400).json({ error: 'allergenID_required' });
+
+    const [result] = await pool.execute(
+      'DELETE FROM userAllergen WHERE userID = ? AND allergenID = ?',
+      [userID, String(allergenID)]
+    );
+    return res.json({ ok: true, deleted: result.affectedRows > 0 });
+  } catch (err) {
+    console.error('DELETE /api/user/allergens error:', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
+// Replace entire allergen set (bulk update)
+app.put('/api/user/allergens', async (req, res) => {
+  const conn = await pool.getConnection();
+  try {
+    const { userID, items } = req.body || {};
+    if (!userID) return res.status(400).json({ error: 'userID_required' });
+
+    const arr = Array.isArray(items) ? items.map(x => String(x)) : [];
+
+    await conn.beginTransaction();
+
+    await conn.execute('DELETE FROM userAllergen WHERE userID = ?', [userID]);
+
+    if (arr.length > 0) {
+      const values = arr.map(a => [userID, a]);
+      await conn.query(
+        'INSERT INTO userAllergen (userID, allergenID) VALUES ?',
+        [values]
+      );
+    }
+
+    await conn.commit();
+    return res.json({ ok: true, userID, items: arr });
+  } catch (err) {
+    try { await conn.rollback(); } catch (_) {}
+    console.error('PUT /api/user/allergens error:', err);
+    return res.status(500).json({ error: 'server_error' });
+  } finally {
+    conn.release();
+  }
+});
+
+
 /* ------------------------------------------------------------------ */
 /*                             API: Signup                             */
 /* ------------------------------------------------------------------ */
