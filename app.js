@@ -75,6 +75,27 @@ function buildE164({ phoneE164, phone_country_code, phone_number }) {
 }
 
 
+// f031/app.js
+app.get('/api/user/blacklist/items', async (req, res) => {
+  try {
+    const { userID } = req.query || {};
+    if (!userID) return res.status(400).json({ error: 'userID_required' });
+
+    const sql = `
+      SELECT i.id, i.name, i.brand, i.quantity, i.feature, i.productColor, i.picWebsite
+      FROM userBlacklist ub
+      JOIN item i ON i.id = ub.itemID
+      WHERE ub.userID = ?
+      ORDER BY i.name ASC
+    `;
+    const [rows] = await pool.execute(sql, [String(userID)]);
+    res.json({ userID: String(userID), items: rows });
+  } catch (err) {
+    res.status(500).json({ error: 'server_error' });
+  }
+});
+
+
 // GET full blacklisted item details for a user
 
 // GET full blacklisted item details for a user
