@@ -16,6 +16,12 @@ const { pool } = require('./db'); // mysql2/promise pool
 const app = express();
 app.use(express.json({ limit: '10kb' }));
 
+require('dotenv').config();
+const userRouter = require('./routes/user');
+
+app.use('/api/user', userRouter);
+
+
 /* ------------------------------------------------------------------ */
 /*                          Key Management                             */
 /* ------------------------------------------------------------------ */
