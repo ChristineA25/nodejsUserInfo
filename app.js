@@ -109,6 +109,40 @@ app.get('/api/user/blacklist/items', async (req, res) => {
  *  - { error: '...' } for error payloads
  */
 
+
+const axios = require('axios'); // npm i axios
+
+// GET /api/user/blacklist/items  (API-aggregated)
+app.get('/api/user/blacklist/items', async (req, res) => {
+  try {
+    const { userID } = req.query || {};
+    if (!userID) return res.status(400).json({ error: 'userID_required' });
+
+    // 1) Get IDs from our local DB (which has userBlacklist)
+    const [rows] = await pool.execute(
+      'SELECT itemID FROM userBlacklist WHERE userID = ?',
+      [String(userID)]
+    );
+    const ids = rows.map(r => r.itemID);
+
+    if (ids.length === 0) return res.json({ userID: String(userID), items: [] });
+
+    // 2) Ask the items service (53a4) for details
+    const base = process.env.ITEMS_SERVICE_BASE; // e.g., https://nodejs-production-53a4.up.railway.app
+    const resp = await axios.post(`${base}/api/items/batchByIds`, { ids }, {
+      timeout: 8000,
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    // 3) Return items to the client
+    return res.json({ userID: String(userID), items: resp.data.items || [] });
+  } catch (err) {
+    console.error('GET /api/user/blacklist/items aggregation error:', err.message);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
+
 // GET all blacklisted itemIDs for a user
 app.get('/api/user/blacklist', async (req, res) => {
   try {
