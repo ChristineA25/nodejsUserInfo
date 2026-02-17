@@ -1,55 +1,189 @@
 
 // routes/user.js
+'use strict';
+
 const express = require('express');
-const axios = require('axios'); // npm i axios (if not present)
+const axios = require('axios');
 const router = express.Router();
-const db = require('../db'); // adjust to your project
+const { pool } = require('../db'); // mysql2/promise pool
 
-const DATA_API_BASE = process.env.DATA_API_BASE;
+// External items service (53a4) base URL, e.g. https://nodejs-production-53a4.up.railway.app
+const ITEMS_SERVICE_BASE = process.env.ITEMS_SERVICE_BASE;
 
-// GET /api/user/blacklist?userID=...   (you already have something like this)
+/* ------------------------------------------------------------------ */
+/*                         USER BLACKLIST APIs                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * GET /api/user/blacklist?userID=...
+ * Return only the IDs the user has blacklisted.
+ * Response: { userID, items: ["123","456", ...] }
+ */
 router.get('/blacklist', async (req, res) => {
   try {
-    const userID = String(req.query.userID || '');
-    if (!userID) return res.status(400).json({ message: 'userID required' });
+    const { userID } = req.query || {};
+    if (!userID) return res.status(400).json({ error: 'userID_required' });
 
-    const [rows] = await db.query(
-      'SELECT itemID FROM userBlacklist WHERE userID = ?',
-      [userID]
+    const [rows] = await pool.execute(
+      'SELECT itemID FROM userBlacklist WHERE userID = ? ORDER BY itemID ASC',
+      [String(userID)]
     );
+
     const items = rows.map(r => String(r.itemID));
-    return res.json({ items });
+    return res.json({ userID: String(userID), items });
   } catch (err) {
-    console.error('GET /user/blacklist', err);
-    res.status(500).json({ message: 'Server error' });
+    console.error('GET /api/user/blacklist error:', err);
+    return res.status(500).json({ error: 'server_error' });
   }
 });
 
-// GET /api/user/blacklist/items?userID=...  -> proxy join (optional)
+/**
+ * GET /api/user/blacklist/items?userID=...
+ * Aggregated details: fetch IDs locally, then ask the items service for full docs.
+ * Response: { userID, items: [ { id, name, ... }, ... ] }
+ */
 router.get('/blacklist/items', async (req, res) => {
   try {
-    const userID = String(req.query.userID || '');
-    if (!userID) return res.status(400).json({ message: 'userID required' });
+    const { userID } = req.query || {};
+    if (!userID) return res.status(400).json({ error: 'userID_required' });
 
-    // 1) get ids from userBlacklist
-    const [rows] = await db.query(
+    // 1) Get IDs from local DB
+    const [rows] = await pool.execute(
       'SELECT itemID FROM userBlacklist WHERE userID = ?',
-      [userID]
+      [String(userID)]
     );
-    const ids = rows.map(r => String(r.itemID));
-    if (!ids.length) return res.json({ items: [] });
+    const ids = rows.map(r => r.itemID);
 
-    // 2) call data service in bulk
-    const { data } = await axios.post(`${DATA_API_BASE}/api/items/byIds`, { ids }, {
-      timeout: 8000,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    if (ids.length === 0) {
+      return res.json({ userID: String(userID), items: [] });
+    }
 
-    // Pass-through shape: { items: [...] }
-    return res.json({ items: Array.isArray(data.items) ? data.items : [] });
+    // 2) Ask the items service (53a4) for details in bulk
+    if (!ITEMS_SERVICE_BASE) {
+      return res.status(500).json({ error: 'ITEMS_SERVICE_BASE_missing' });
+    }
+
+    const resp = await axios.post(
+      `${ITEMS_SERVICE_BASE}/api/items/batchByIds`,
+      { ids },
+      {
+        timeout: 8000,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+
+    const items = Array.isArray(resp?.data?.items) ? resp.data.items : [];
+    return res.json({ userID: String(userID), items });
   } catch (err) {
-    console.error('GET /user/blacklist/items', err?.response?.status, err?.message);
-    res.status(502).json({ message: 'Upstream error' });
+    // If the upstream fails, surface a generic error to the client
+    console.error('GET /api/user/blacklist/items aggregation error:', err?.message);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
+/**
+ * POST /api/user/blacklist
+ * Body: { userID, itemID }
+ * Idempotent via INSERT IGNORE.
+ * Response: { ok: true, userID, itemID }
+ */
+router.post('/blacklist', async (req, res) => {
+  try {
+    const { userID, itemID } = req.body || {};
+    if (!userID) return res.status(400).json({ error: 'userID_required' });
+    if (!itemID) return res.status(400).json({ error: 'itemID_required' });
+
+    await pool.execute(
+      'INSERT IGNORE INTO userBlacklist (userID, itemID) VALUES (?, ?)',
+      [String(userID), String(itemID)]
+    );
+
+    return res.status(201).json({
+      ok: true,
+      userID: String(userID),
+      itemID: String(itemID),
+    });
+  } catch (err) {
+    console.error('POST /api/user/blacklist error:', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
+/**
+ * DELETE /api/user/blacklist/:itemID?userID=...
+ * Response: { ok: true, deleted: boolean }
+ */
+router.delete('/blacklist/:itemID', async (req, res) => {
+  try {
+    const { userID } = req.query || {};
+    const { itemID } = req.params || {};
+
+    if (!userID) return res.status(400).json({ error: 'userID_required' });
+    if (!itemID) return res.status(400).json({ error: 'itemID_required' });
+
+    const [result] = await pool.execute(
+      'DELETE FROM userBlacklist WHERE userID = ? AND itemID = ?',
+      [String(userID), String(itemID)]
+    );
+
+    return res.json({
+      ok: true,
+      deleted: result.affectedRows > 0,
+    });
+  } catch (err) {
+    console.error('DELETE /api/user/blacklist error:', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
+/**
+ * PUT /api/user/blacklist
+ * Replace the entire blacklist set for a user.
+ * Body: { userID, items: ["123","456", ...] }
+ * Response: { ok: true, userID, items: [...] }
+ */
+router.put('/blacklist', async (req, res) => {
+  const conn = await pool.getConnection();
+  try {
+    const { userID, items } = req.body || {};
+    if (!userID) return res.status(400).json({ error: 'userID_required' });
+
+    const arr = Array.isArray(items)
+      ? items.map(x => String(x)).filter(Boolean)
+      : [];
+
+    await conn.beginTransaction();
+
+    // Clear existing rows
+    await conn.execute('DELETE FROM userBlacklist WHERE userID = ?', [
+      String(userID),
+    ]);
+
+    // Bulk insert new set
+    if (arr.length > 0) {
+      const values = arr.map(itemID => [String(userID), String(itemID)]);
+      // mysql2/promise: bulk values with .query([...])
+      await conn.query(
+        'INSERT INTO userBlacklist (userID, itemID) VALUES ?',
+        [values]
+      );
+    }
+
+    await conn.commit();
+
+    return res.json({
+      ok: true,
+      userID: String(userID),
+      items: arr,
+    });
+  } catch (err) {
+    try {
+      await conn.rollback();
+    } catch (_) {}
+    console.error('PUT /api/user/blacklist error:', err);
+    return res.status(500).json({ error: 'server_error' });
+  } finally {
+    conn.release();
   }
 });
 
