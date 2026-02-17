@@ -74,6 +74,115 @@ function buildE164({ phoneE164, phone_country_code, phone_number }) {
   return combined;
 }
 
+
+/* ------------------------------------------------------------------ */
+/*                        API: USER BLACKLIST                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Shape conventions (consistent with your other APIs):
+ *  - 400 for missing params / invalid input
+ *  - 404 when user not found is NOT checked here (we store by userID key)
+ *  - 201 on single insert success
+ *  - 200 on GET/PUT/DELETE success
+ *  - { error: '...' } for error payloads
+ */
+
+// GET all blacklisted itemIDs for a user
+app.get('/api/user/blacklist', async (req, res) => {
+  try {
+    const { userID } = req.query || {};
+    if (!userID) return res.status(400).json({ error: 'userID_required' });
+
+    const [rows] = await pool.execute(
+      'SELECT itemID FROM userBlacklist WHERE userID = ? ORDER BY itemID ASC',
+      [userID]
+    );
+    const items = rows.map(r => String(r.itemID));
+    return res.json({ userID, items });
+  } catch (err) {
+    console.error('GET /api/user/blacklist error:', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
+// Add ONE blacklisted item
+app.post('/api/user/blacklist', async (req, res) => {
+  try {
+    const { userID, itemID } = req.body || {};
+    if (!userID) return res.status(400).json({ error: 'userID_required' });
+    if (!itemID) return res.status(400).json({ error: 'itemID_required' });
+
+    // INSERT IGNORE to be idempotent if (userID,itemID) already exists
+    await pool.execute(
+      'INSERT IGNORE INTO userBlacklist (userID, itemID) VALUES (?, ?)',
+      [String(userID), String(itemID)]
+    );
+
+    return res.status(201).json({ ok: true, userID: String(userID), itemID: String(itemID) });
+  } catch (err) {
+    console.error('POST /api/user/blacklist error:', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
+// Delete ONE blacklisted item for a user
+app.delete('/api/user/blacklist/:itemID', async (req, res) => {
+  try {
+    const { userID } = req.query || {};
+    const { itemID } = req.params || {};
+
+    if (!userID) return res.status(400).json({ error: 'userID_required' });
+    if (!itemID) return res.status(400).json({ error: 'itemID_required' });
+
+    const [result] = await pool.execute(
+      'DELETE FROM userBlacklist WHERE userID = ? AND itemID = ?',
+      [String(userID), String(itemID)]
+    );
+
+    return res.json({ ok: true, deleted: result.affectedRows > 0 });
+  } catch (err) {
+    console.error('DELETE /api/user/blacklist error:', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
+// Replace ENTIRE blacklist set for a user (bulk update)
+app.put('/api/user/blacklist', async (req, res) => {
+  const conn = await pool.getConnection();
+  try {
+    const { userID, items } = req.body || {};
+    if (!userID) return res.status(400).json({ error: 'userID_required' });
+
+    const arr = Array.isArray(items) ? items.map(x => String(x)).filter(Boolean) : [];
+
+    await conn.beginTransaction();
+
+    // Clear existing
+    await conn.execute('DELETE FROM userBlacklist WHERE userID = ?', [String(userID)]);
+
+    // Insert new set (if any)
+    if (arr.length > 0) {
+      const values = arr.map(itemID => [String(userID), String(itemID)]);
+      // Bulk insert
+      await conn.query(
+        'INSERT INTO userBlacklist (userID, itemID) VALUES ?',
+        [values]
+      );
+    }
+
+    await conn.commit();
+    return res.json({ ok: true, userID: String(userID), items: arr });
+  } catch (err) {
+    try { await conn.rollback(); } catch (_) {}
+    console.error('PUT /api/user/blacklist error:', err);
+    return res.status(500).json({ error: 'server_error' });
+  } finally {
+    conn.release();
+  }
+});
+
+
 /* ------------------------------------------------------------------ */
 /*                         Health & Static                             */
 /* ------------------------------------------------------------------ */
