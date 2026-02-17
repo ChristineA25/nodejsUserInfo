@@ -96,41 +96,6 @@ app.get('/api/user/blacklist/items', async (req, res) => {
 });
 
 
-// GET full blacklisted item details for a user
-
-// GET full blacklisted item details for a user
-app.get('/api/user/blacklist/items', async (req, res) => {
-  try {
-    const { userID } = req.query || {};
-    if (!userID) return res.status(400).json({ error: 'userID_required' });
-
-    // 👇 NOTE: table name is `item` (singular) and PK is `item.id`
-    const sql = `
-      SELECT 
-        i.id,
-        i.name,
-        i.brand,
-        i.quantity,
-        i.feature,
-        i.productColor,
-        i.picWebsite
-      FROM userBlacklist ub
-      JOIN item i ON i.id = ub.itemID
-      WHERE ub.userID = ?
-      ORDER BY i.name ASC
-    `;
-
-    const [rows] = await pool.execute(sql, [String(userID)]);
-    return res.json({ userID: String(userID), items: rows });
-  } catch (err) {
-    console.error('GET /api/user/blacklist/items error:', err);
-    // (Optional) expose err.message while debugging:
-    // return res.status(500).json({ error: 'server_error', message: err.message });
-    return res.status(500).json({ error: 'server_error' });
-  }
-});
-
-
 /* ------------------------------------------------------------------ */
 /*                        API: USER BLACKLIST                          */
 /* ------------------------------------------------------------------ */
