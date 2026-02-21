@@ -74,7 +74,6 @@ function buildE164({ phoneE164, phone_country_code, phone_number }) {
   return combined;
 }
 
-
 /* ------------------------------------------------------------------ */
 /*                        API: USER BLACKLIST                          */
 /* ------------------------------------------------------------------ */
@@ -182,7 +181,6 @@ app.put('/api/user/blacklist', async (req, res) => {
   }
 });
 
-
 /* ------------------------------------------------------------------ */
 /*                         Health & Static                             */
 /* ------------------------------------------------------------------ */
@@ -199,7 +197,6 @@ try {
 } catch (err) {
   console.error('❌ Failed to load ./routes/index:', err.message);
 }
-
 
 /* ------------------------------------------------------------------ */
 /*                         API: USER ALLERGENS                         */
@@ -293,7 +290,6 @@ app.put('/api/user/allergens', async (req, res) => {
   }
 });
 
-
 /* ------------------------------------------------------------------ */
 /*                             API: Signup                             */
 /* ------------------------------------------------------------------ */
@@ -324,7 +320,6 @@ app.post('/api/signup', async (req, res) => {
     // Deterministic tokens
     let emailEnc = null;
     let phoneEnc = null;
-    let phoneE164Final = null;
 
     try {
       if (email) {
@@ -333,7 +328,7 @@ app.post('/api/signup', async (req, res) => {
       }
 
       if (identifierType === 'phone' || phoneE164) {
-        phoneE164Final = buildE164({
+        const phoneE164Final = buildE164({
           phoneE164,
           phone_country_code,
           phone_number
@@ -389,7 +384,6 @@ app.post('/api/signup', async (req, res) => {
   }
 });
 
-
 /* ------------------------------------------------------------------ */
 /*                             API: LOGIN                              */
 /* ------------------------------------------------------------------ */
@@ -401,7 +395,7 @@ app.post('/api/login', async (req, res) => {
       phone_country_code,
       phone_number,
       phoneE164,
-      identifierType     // NEW (optional): "email" | "phone" | "username"
+      identifierType     // optional: "email" | "phone" | "username"
     } = req.body || {};
 
     if (!identifier)
@@ -413,8 +407,6 @@ app.post('/api/login', async (req, res) => {
     let where = '';
     let value = null;
 
-    // If the client tells us the identifier type, use that path.
-    // Otherwise, fall back to the original auto-detect logic.
     const explicit = (identifierType || '').toString().trim().toLowerCase();
 
     if (explicit === 'email') {
@@ -429,7 +421,7 @@ app.post('/api/login', async (req, res) => {
         e164Final = buildE164({
           phoneE164,
           phone_country_code,
-          phone_number: phone_number || identifier // allow raw digits as identifier
+          phone_number: phone_number || identifier
         });
       } catch (err) {
         return res.status(400).json({ error: 'invalid_phone_number' });
@@ -499,17 +491,18 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-
 /* ------------------------------------------------------------------ */
 /*                         API: USER SETTINGS                          */
 /* ------------------------------------------------------------------ */
+
+// READ settings (updated to use homeAdd/workAdd)
 app.get('/api/user/settings', async (req, res) => {
   try {
     const { userID } = req.query || {};
     if (!userID) return res.status(400).json({ error: 'userID_required' });
 
     const [rows] = await pool.execute(
-      `SELECT userID, monthlySalary, targetMonthlySaving, homeAddCode, workAddCode
+      `SELECT userID, monthlySalary, targetMonthlySaving, homeAdd, workAdd
          FROM loginTable
         WHERE userID = ?
         LIMIT 1`,
@@ -520,15 +513,14 @@ app.get('/api/user/settings', async (req, res) => {
       return res.status(404).json({ error: 'user_not_found' });
 
     const r = rows[0];
-    // MySQL may return DECIMAL as strings; normalize to numbers where possible.
     const num = (v) => (v === null || v === undefined ? null : Number(v));
 
     return res.json({
       userID: r.userID,
       monthlySalary: num(r.monthlySalary),
       targetMonthlySaving: num(r.targetMonthlySaving),
-      homeAddCode: r.homeAddCode || null,
-      workAddCode: r.workAddCode || null
+      homeAdd: r.homeAdd || null,
+      workAdd: r.workAdd || null
     });
   } catch (err) {
     console.error('GET /api/user/settings error:', err);
@@ -536,12 +528,16 @@ app.get('/api/user/settings', async (req, res) => {
   }
 });
 
+// UPDATE settings (accepts new names; supports old body names for compatibility)
 app.put('/api/user/settings', async (req, res) => {
   try {
     const {
       userID,
       monthlySalary,
       targetMonthlySaving,
+      homeAdd,       // new column name (TEXT)
+      workAdd,       // new column name (TEXT)
+      // Legacy body field names from old clients (ignored if new ones present)
       homeAddCode,
       workAddCode
     } = req.body || {};
@@ -558,14 +554,18 @@ app.put('/api/user/settings', async (req, res) => {
     if (tsNum !== null && (Number.isNaN(tsNum) || tsNum < 0))
       return res.status(400).json({ error: 'invalid_targetMonthlySaving' });
 
+    // Backward compatibility: if new fields are undefined, allow old ones.
+    const homeAddFinal = (homeAdd !== undefined) ? homeAdd : (homeAddCode ?? null);
+    const workAddFinal = (workAdd !== undefined) ? workAdd : (workAddCode ?? null);
+
     const [result] = await pool.execute(
       `UPDATE loginTable
           SET monthlySalary = ?,
               targetMonthlySaving = ?,
-              homeAddCode = ?,
-              workAddCode = ?
+              homeAdd = ?,
+              workAdd = ?
         WHERE userID = ?`,
-      [msNum, tsNum, homeAddCode ?? null, workAddCode ?? null, userID]
+      [msNum, tsNum, homeAddFinal ?? null, workAddFinal ?? null, userID]
     );
 
     if (result.affectedRows === 0)
@@ -576,8 +576,8 @@ app.put('/api/user/settings', async (req, res) => {
       userID,
       monthlySalary: msNum,
       targetMonthlySaving: tsNum,
-      homeAddCode: homeAddCode ?? null,
-      workAddCode: workAddCode ?? null
+      homeAdd: homeAddFinal ?? null,
+      workAdd: workAddFinal ?? null
     });
   } catch (err) {
     console.error('PUT /api/user/settings error:', err);
@@ -603,3 +603,4 @@ app.listen(PORT, '0.0.0.0', () => {
     console.warn('⚠️ indexRouter was not mounted. Only static files and /health + /api/signup are active.');
   }
 });
+``
