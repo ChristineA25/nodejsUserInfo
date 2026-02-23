@@ -26,12 +26,12 @@ router.post("/", async (req, res) => {
     if (!priceValue) return res.status(400).json({ error: "price_required" });
 
     const sql = `
-      INSERT INTO itemInput
-      (userID, brand, itemName, itemID, feature,
-       quantity, itemCount, priceValue, channel,
-       shop_name, shop_address)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `;
+  INSERT INTO itemInput
+  (userID, brand, itemName, itemID, itemNo, feature,
+   quantity, itemCount, priceValue, priceID, discountApplied,
+   channel, shop_name, shop_address, chainShopID, createdAt)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`;
 
     await pool.execute(sql, [
       userID,
