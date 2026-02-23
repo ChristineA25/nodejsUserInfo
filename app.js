@@ -16,6 +16,9 @@ const { pool } = require('./db'); // mysql2/promise pool
 const app = express();
 app.use(express.json({ limit: '10kb' }));
 
+const itemInputRouter = require('./routes/itemInput');
+app.use('/api/itemInput', itemInputRouter);
+
 /* ------------------------------------------------------------------ */
 /*                          Key Management                             */
 /* ------------------------------------------------------------------ */
