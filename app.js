@@ -187,6 +187,13 @@ app.put('/api/user/blacklist', async (req, res) => {
 app.get('/health', (req, res) => res.status(200).send('ok'));
 app.use(express.static(path.join(__dirname, 'public')));
 
+const adminRouter = require('./routes/admin');
+app.use('/api/admin', adminRouter);
+console.log('✅ adminRouter mounted at /api/admin');
+catch (err) {
+  console.error('❌ Failed to load ./routes/admin:', err.message);
+}
+
 /* Routes Mount */
 let indexRouterMounted = false;
 try {
