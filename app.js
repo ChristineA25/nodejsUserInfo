@@ -548,6 +548,15 @@ app.put('/api/user/settings', async (req, res) => {
   }
 });
 
+// After other app.use(...) and router mounts
+try {
+  const adminRouter = require('./routes/admin');
+  app.use('/api/admin', adminRouter);
+  console.log('✅ adminRouter mounted at /api/admin');
+} catch (err) {
+  console.error('❌ Failed to load ./routes/admin:', err.message);
+}
+
 /* ------------------------------------------------------------------ */
 /* 404 & Server Listen */
 /* ------------------------------------------------------------------ */
