@@ -8,12 +8,14 @@ const { pool } = require('../db'); // mysql2/promise pool
 
 // Dev-only safety guard: expose these endpoints only outside production.
 // Remove this block if you explicitly need them in production.
+/*
 router.use((req, res, next) => {
   if (process.env.NODE_ENV === 'production') {
     return res.status(403).json({ error: 'disabled_in_production' });
   }
   next();
 });
+*/
 
 /**
  * GET /api/admin/loginTable
