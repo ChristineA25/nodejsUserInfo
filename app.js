@@ -548,6 +548,35 @@ app.put('/api/user/settings', async (req, res) => {
   }
 });
 
+
+// UPDATE displayTime for a user
+app.put('/api/user/displayTime', async (req, res) => {
+  try {
+    const { userID, displayTime } = req.body ?? {};
+    if (!userID) return res.status(400).json({ error: 'userID_required' });
+
+    // Accept either a literal string (e.g., "19:36,11feb26") or an ISO datetime.
+    // If you have control over the client, prefer ISO-8601 for consistency.
+    const value =
+      displayTime === undefined || displayTime === null || displayTime === ''
+        ? null
+        : String(displayTime).trim();
+
+    const [result] = await pool.execute(
+      'UPDATE loginTable SET displayTime = ? WHERE userID = ?',
+      [value, String(userID)]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'user_not_found' });
+    }
+    return res.json({ ok: true, userID: String(userID), displayTime: value });
+  } catch (err) {
+    console.error('PUT /api/user/displayTime error:', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
 // After other app.use(...) and router mounts
 try {
   const adminRouter = require('./routes/admin');
