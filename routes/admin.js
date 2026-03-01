@@ -227,7 +227,20 @@ router.get('/loginTable/:userID', async (req, res) => {
 });
 
 
-router.get('/userBlacklist/all', async (req, res) => {
+/** Utility to make safe CSV (prevents CSV injection in Excel). */
+const sanitizeCell = (v) => {
+  const s = String(v ?? '');
+  return /^[=+\-@]/.test(s) ? `'${s}` : s;
+};
+const toCsv = (rows) => {
+  const header = 'userID,itemID\n';
+  const body = rows.map(r => `${sanitizeCell(r.userID)},${sanitizeCell(r.itemID)}`).join('\n');
+  return header + body + '\n';
+};
+
+
+// app.js (near other endpoints)
+app.get('/api/user/blacklist/all', async (req, res) => {
   try {
     const wantCsv = String(req.query.format || '').toLowerCase() === 'csv';
     const [rows] = await pool.query(
@@ -235,7 +248,13 @@ router.get('/userBlacklist/all', async (req, res) => {
     );
 
     if (wantCsv) {
-      const csv = toCsv(rows);
+      const sanitizeCell = (v) => {
+        const s = String(v ?? '');
+        return /^[=+\-@]/.test(s) ? `'${s}` : s;
+      };
+      const header = 'userID,itemID\n';
+      const body = rows.map(r => `${sanitizeCell(r.userID)},${sanitizeCell(r.itemID)}`).join('\n');
+      const csv = header + body + '\n';
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', 'attachment; filename="userBlacklist_all.csv"');
       return res.status(200).send(csv);
@@ -243,7 +262,7 @@ router.get('/userBlacklist/all', async (req, res) => {
 
     return res.json({ total: rows.length, rows });
   } catch (err) {
-    console.error('GET /api/admin/userBlacklist/all error:', err?.message);
+    console.error('GET /api/user/blacklist/all error:', err?.message);
     return res.status(500).json({ error: 'server_error' });
   }
 });
