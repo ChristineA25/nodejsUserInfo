@@ -226,5 +226,26 @@ router.get('/loginTable/:userID', async (req, res) => {
   }
 });
 
+
+router.get('/userBlacklist/all', async (req, res) => {
+  try {
+    const wantCsv = String(req.query.format || '').toLowerCase() === 'csv';
+    const [rows] = await pool.query(
+      'SELECT userID, itemID FROM userBlacklist ORDER BY userID ASC, itemID ASC'
+    );
+
+    if (wantCsv) {
+      const csv = toCsv(rows);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="userBlacklist_all.csv"');
+      return res.status(200).send(csv);
+    }
+
+    return res.json({ total: rows.length, rows });
+  } catch (err) {
+    console.error('GET /api/admin/userBlacklist/all error:', err?.message);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
 module.exports = router;
-``
