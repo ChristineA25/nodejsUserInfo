@@ -21,6 +21,107 @@ router.use((req, res, next) => {
   next();
 });
 
+
+// === DROP-IN: routes/admin.js additions =====================================
+const stringifyCsv = (rows) => {
+  if (!rows || rows.length === 0) return 'userID,allergenID\n';
+  const header = 'userID,allergenID\n';
+  const body = rows
+    .map(r => `${String(r.userID)},${String(r.allergenID)}`)
+    .join('\n');
+  return header + body + '\n';
+};
+
+/**
+ * GET /api/admin/userAllergen
+ * Returns ALL rows from userAllergen with optional filters and pagination.
+ * Query params:
+ *   - userID: filter by a single user (optional)
+ *   - page (1-based, default 1)
+ *   - pageSize (default 200, max 2000)
+ *   - format=csv to download as CSV
+ *
+ * Examples:
+ *   /api/admin/userAllergen
+ *   /api/admin/userAllergen?page=1&pageSize=500
+ *   /api/admin/userAllergen?userID=798651082169
+ *   /api/admin/userAllergen?format=csv
+ */
+router.get('/userAllergen', async (req, res) => {
+  try {
+    // Basic params
+    const userID = (req.query.userID ?? '').toString().trim();
+    const page = Math.max(parseInt(req.query.page ?? '1', 10), 1);
+    const pageSize = Math.min(Math.max(parseInt(req.query.pageSize ?? '200', 10), 1), 2000);
+    const offset = (page - 1) * pageSize;
+    const wantCsv = (req.query.format ?? '').toString().toLowerCase() === 'csv';
+
+    // Build WHERE + SQL parts safely
+    const whereParts = [];
+    const whereParams = [];
+    if (userID) {
+      whereParts.push('userID = ?');
+      whereParams.push(String(userID));
+    }
+    const whereSql = whereParts.length ? ('WHERE ' + whereParts.join(' AND ')) : '';
+
+    // Fetch page
+    const listSql = `
+      SELECT userID, allergenID
+      FROM userAllergen
+      ${whereSql}
+      ORDER BY userID ASC, allergenID ASC
+      LIMIT ${pageSize} OFFSET ${offset}
+    `;
+    const [rows] = await pool.query(listSql, whereParams);
+
+    // Count for total
+    const [countRows] = await pool.query(
+      `SELECT COUNT(*) AS total FROM userAllergen ${whereSql}`,
+      whereParams
+    );
+    const total = Number(countRows?.[0]?.total ?? 0);
+
+    if (wantCsv) {
+      const csv = stringifyCsv(rows);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="userAllergen.csv"');
+      return res.status(200).send(csv);
+    }
+
+    return res.json({ page, pageSize, total, rows });
+  } catch (err) {
+    console.error('GET /api/admin/userAllergen error:', err?.message);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
+/**
+ * GET /api/admin/userAllergen/all
+ * Streams the entire table without paging (for small datasets).
+ * Use carefully if the table is large. Supports optional ?format=csv.
+ */
+router.get('/userAllergen/all', async (req, res) => {
+  try {
+    const wantCsv = (req.query.format ?? '').toString().toLowerCase() === 'csv';
+    const [rows] = await pool.query(
+      `SELECT userID, allergenID
+       FROM userAllergen
+       ORDER BY userID ASC, allergenID ASC`
+    );
+    if (wantCsv) {
+      const csv = stringifyCsv(rows);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="userAllergen_all.csv"');
+      return res.status(200).send(csv);
+    }
+    return res.json({ total: rows.length, rows });
+  } catch (err) {
+    console.error('GET /api/admin/userAllergen/all error:', err?.message);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
 /**
  * GET /api/admin/loginTable
  * Query params: page (1-based), pageSize (default 50)
