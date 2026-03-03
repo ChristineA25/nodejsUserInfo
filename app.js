@@ -531,6 +531,12 @@ app.put('/api/user/settings', async (req, res) => {
       [msNum, tsNum, homeAddFinal ?? null, workAddFinal ?? null, userID]
     );
 
+    await pool.execute(
+      `INSERT INTO salaryHist (userID, salary, targetSaving, changedAt) 
+       VALUES (?, ?, ?, NOW())`,
+      [userID, msNum, tsNum]
+    );
+
     if (result.affectedRows === 0)
       return res.status(404).json({ error: 'user_not_found' });
 
