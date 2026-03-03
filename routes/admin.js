@@ -227,39 +227,27 @@ router.get('/loginTable/:userID', async (req, res) => {
 });
 
 /**
- * GET /api/admin/salaryHist
- * Returns ALL rows from the salary history table with pagination.
- * Query params: page, pageSize
+ * GET /api/admin/salaryHist/all
+ * Fetches every single row from the salary history table as a single JSON array.
  */
-router.get('/salaryHist', async (req, res) => {
+router.get('/salaryHist/all', async (req, res) => {
   try {
-    const page = Math.max(parseInt(req.query.page || '1', 10), 1);
-    const pageSize = Math.min(Math.max(parseInt(req.query.pageSize || '50', 10), 1), 500);
-    const offset = (page - 1) * pageSize;
-
-    // Fetch the rows matching the table in your screenshot
+    // This query retrieves all columns for every row without any LIMIT
     const [rows] = await pool.query(
       `SELECT userID, salary, targetSaving, changedAt
        FROM salaryHist
-       ORDER BY changedAt DESC
-       LIMIT ${pageSize} OFFSET ${offset}`
+       ORDER BY changedAt DESC`
     );
 
-    // Get total count for pagination metadata
-    const [countRows] = await pool.query('SELECT COUNT(*) AS total FROM salaryHist');
-    const total = Number(countRows?.[0]?.total || 0);
-
-    return res.json({
-      page,
-      pageSize,
-      total,
-      rows
+    // Returns the full dataset in the 'rows' field
+    return res.json({ 
+      total: rows.length, 
+      rows 
     });
   } catch (err) {
-    console.error('GET /api/admin/salaryHist error:', err.message);
+    console.error('GET /api/admin/salaryHist/all error:', err.message);
     return res.status(500).json({ error: 'server_error' });
   }
 });
 
 module.exports = router;
-``
