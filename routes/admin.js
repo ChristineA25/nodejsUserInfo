@@ -226,30 +226,5 @@ router.get('/loginTable/:userID', async (req, res) => {
   }
 });
 
-/**
- * GET /api/admin/salaryHist/all
- * Fetches every single row from the salary history table as a single JSON array.
- */
-router.get('/salaryHist/all', async (req, res) => {
-  try {
-    // This query retrieves all columns for every row without any LIMIT
-    const [rows] = await pool.query(
-      `SELECT userID, salary, targetSaving, changedAt
-       FROM salaryHist
-       ORDER BY changedAt DESC`
-    );
-
-    // Returns the full dataset in the 'rows' field
-    return res.json({ 
-      total: rows.length, 
-      rows 
-    });
-  } catch (err) {
-    console.error('GET /api/admin/salaryHist/all error:', err.message);
-    return res.status(500).json({ error: 'server_error' });
-  }
-});
-
--- testing deployment
-
 module.exports = router;
+``
