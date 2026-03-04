@@ -226,5 +226,56 @@ router.get('/loginTable/:userID', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/admin/salaryHist
+ * Fetches all historical salary and saving records.
+ * Query params: 
+ * - userID (optional filter)
+ * - page (default 1)
+ * - pageSize (default 50)
+ */
+router.get('/salaryHist', async (req, res) => {
+  try {
+    const userID = (req.query.userID ?? '').toString().trim();
+    const page = Math.max(parseInt(req.query.page ?? '1', 10), 1);
+    const pageSize = Math.min(Math.max(parseInt(req.query.pageSize ?? '50', 10), 1), 500);
+    const offset = (page - 1) * pageSize;
+
+    const whereParts = [];
+    const whereParams = [];
+    if (userID) {
+      whereParts.push('userID = ?');
+      whereParams.push(String(userID));
+    }
+    const whereSql = whereParts.length ? ('WHERE ' + whereParts.join(' AND ')) : '';
+
+    // Query for the history records
+    const [rows] = await pool.query(
+      `SELECT userID, salary, targetSaving, changedAt
+       FROM salaryHist
+       ${whereSql}
+       ORDER BY changedAt DESC
+       LIMIT ${pageSize} OFFSET ${offset}`,
+      whereParams
+    );
+
+    // Get total count for pagination metadata
+    const [countRows] = await pool.query(
+      `SELECT COUNT(*) AS total FROM salaryHist ${whereSql}`, 
+      whereParams
+    );
+    const total = Number(countRows?.[0]?.total ?? 0);
+
+    return res.json({
+      page,
+      pageSize,
+      total,
+      rows
+    });
+  } catch (err) {
+    console.error('GET /api/admin/salaryHist error:', err?.message);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
 module.exports = router;
-``
