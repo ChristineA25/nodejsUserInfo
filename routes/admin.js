@@ -228,34 +228,20 @@ router.get('/loginTable/:userID', async (req, res) => {
 
 /**
  * GET /api/admin/salaryHist
- * Fetches ALL records from the salaryHist table.
- * Query params: 
- * - page (default 1)
- * - pageSize (set high, e.g., 2000, to get all records at once)
+ * Fetches EVERY record available in the salaryHist table without pagination.
  */
 router.get('/salaryHist', async (req, res) => {
   try {
-    const page = Math.max(parseInt(req.query.page ?? '1', 10), 1);
-    // Increased max pageSize to 2000 to capture "all" records in one go
-    const pageSize = Math.min(Math.max(parseInt(req.query.pageSize ?? '200', 10), 1), 2000);
-    const offset = (page - 1) * pageSize;
-
-    // Query for all records, ordered by most recent change
+    // Query for every record in the table, ordered by the most recent change
     const [rows] = await pool.query(
       `SELECT userID, salary, targetSaving, changedAt
        FROM salaryHist
-       ORDER BY changedAt DESC
-       LIMIT ${pageSize} OFFSET ${offset}`
+       ORDER BY changedAt DESC`
     );
 
-    // Get the total count of all records in the table
-    const [countRows] = await pool.query('SELECT COUNT(*) AS total FROM salaryHist');
-    const total = Number(countRows?.[0]?.total ?? 0);
-
+    // Return the full array and the total count
     return res.json({
-      page,
-      pageSize,
-      total,
+      total: rows.length,
       rows
     });
   } catch (err) {
