@@ -158,7 +158,6 @@ router.get('/loginTable', async (req, res) => {
       `SELECT ${cols}
        FROM loginTable
        ORDER BY userID ASC
-       LIMIT ${pageSize} OFFSET ${offset}`
     );
 
     // COUNT(*) with safe fallback (won't crash endpoint if COUNT fails)
