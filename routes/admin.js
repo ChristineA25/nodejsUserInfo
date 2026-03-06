@@ -276,6 +276,32 @@ const stringifyLoginCsv = (rows) => {
   return headerLine + body;
 };
 
+
+// === NEW: GET /api/admin/loginTable/all =====================================
+// Returns ALL rows from loginTable. Default JSON; add ?format=csv for CSV.
+// Use carefully on large datasets. Keep ADMIN_KEY enabled in production.
+
+const stringifyLoginCsv = (rows) => {
+  const headers = [
+    'userID','username','password','phone_country_code',
+    'secuQuestion1','secuAns1','secuQuestion2','secuAns2','secuQuestion3','secuAns3',
+    'email_enc','phone_number_enc',
+    'monthlySalary','targetMonthlySaving',
+    'homeAdd','workAdd','displayTime'
+  ];
+  const headerLine = headers.join(',') + '\n';
+  if (!rows || rows.length === 0) return headerLine;
+
+  const esc = (v) => {
+    if (v === null || v === undefined) return '';
+    const s = String(v);
+    // CSV escape: wrap in quotes if contains comma, quote, or newline
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const body = rows.map(r => headers.map(h => esc(r[h])).join(',')).join('\n') + '\n';
+  return headerLine + body;
+};
+
 router.get('/loginTable/all', async (req, res) => {
   try {
     const wantCsv = (req.query.format ?? '').toString().toLowerCase() === 'csv';
