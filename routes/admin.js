@@ -250,4 +250,27 @@ router.get('/salaryHist', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/admin/securityQuestions
+ * Fetches all available security questions from the regSecQst2 table.
+ */
+router.get('/securityQuestions', async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT secQst FROM regSecQst2'
+    );
+    
+    // Return just the array of question strings
+    const questions = rows.map(r => r.secQst);
+    
+    return res.json({
+      total: questions.length,
+      questions: questions
+    });
+  } catch (err) {
+    console.error('GET /api/admin/securityQuestions error:', err?.message);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
 module.exports = router;
