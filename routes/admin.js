@@ -273,4 +273,33 @@ router.get('/securityQuestions', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/admin/fakeSecQst2
+ * Fetches ALL rows from the fakeSecQst2 table shown in the screenshot.
+ */
+router.get('/fakeSecQst2', async (req, res) => {
+  try {
+    const wantCsv = (req.query.format ?? '').toString().toLowerCase() === 'csv';
+    
+    // Fetch all columns from the table in the screenshot
+    const [rows] = await pool.query('SELECT * FROM fakeSecQst2');
+
+    if (wantCsv && rows.length > 0) {
+      const header = Object.keys(rows[0]).join(',') + '\n';
+      const body = rows.map(r => Object.values(r).join(',')).join('\n');
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename="fakeSecQst2.csv"');
+      return res.status(200).send(header + body);
+    }
+
+    return res.json({
+      total: rows.length,
+      rows: rows
+    });
+  } catch (err) {
+    console.error('GET /api/admin/fakeSecQst2 error:', err?.message);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
 module.exports = router;
