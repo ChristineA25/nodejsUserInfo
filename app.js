@@ -583,6 +583,38 @@ app.put('/api/user/displayTime', async (req, res) => {
   }
 });
 
+/**
+ * API: Admin Update User Password
+ * PUT /api/admin/update-password
+ * Body: { userID, newPassword }
+ */
+app.put('/api/admin/update-password', async (req, res) => {
+  try {
+    const { userID, newPassword } = req.body || {};
+
+    if (!userID) return res.status(400).json({ error: 'userID_required' });
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ error: 'password_too_short' });
+    }
+
+    // Hash the password with 12 rounds to match existing records
+    const saltRounds = 12;
+    const passwordHash = await bcrypt.hash(String(newPassword), saltRounds);
+
+    const sql = 'UPDATE loginTable SET password = ? WHERE userID = ?';
+    const [result] = await pool.execute(sql, [passwordHash, String(userID)]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'user_not_found' });
+    }
+
+    return res.json({ ok: true, message: 'Password updated successfully' });
+  } catch (err) {
+    console.error('Update Password Error:', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
 // After other app.use(...) and router mounts
 try {
   const adminRouter = require('./routes/admin');
@@ -606,4 +638,3 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Server listening on http://0.0.0.0:${PORT}`);
 });
-``
