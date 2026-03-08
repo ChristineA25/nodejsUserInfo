@@ -615,6 +615,100 @@ app.put('/api/admin/update-password', async (req, res) => {
   }
 });
 
+/**
+ * API: Update User Credentials/Identity
+ * PUT /api/user/update-identity
+ * Body: { 
+ * userID, 
+ * username, 
+ * password, 
+ * phone_country_code, 
+ * email, 
+ * phone_number, 
+ * phoneE164 
+ * }
+ */
+app.put('/api/user/update-identity', async (req, res) => {
+  try {
+    const {
+      userID,
+      username,
+      password,
+      phone_country_code,
+      email,
+      phone_number,
+      phoneE164
+    } = req.body || {};
+
+    if (!userID) return res.status(400).json({ error: 'userID_required' });
+
+    // 1. Handle Password Hashing (if provided)
+    let passwordHash = undefined;
+    if (password !== undefined) {
+      // Use 12 salt rounds to match signup/admin logic
+      passwordHash = password === null ? null : await bcrypt.hash(String(password), 12);
+    }
+
+    // 2. Handle Deterministic Encryption for Email
+    let emailEnc = undefined;
+    if (email !== undefined) {
+      const normEmail = normalizeEmail(email); //
+      emailEnc = normEmail ? detTokenBase64(normEmail) : null; //
+    }
+
+    // 3. Handle Deterministic Encryption for Phone
+    let phoneEnc = undefined;
+    if (phone_number !== undefined || phoneE164 !== undefined) {
+      try {
+        if (phone_number === null && phoneE164 === null) {
+          phoneEnc = null;
+        } else {
+          const phoneE164Final = buildE164({
+            phoneE164,
+            phone_country_code,
+            phone_number
+          }); //
+          phoneEnc = detTokenBase64(phoneE164Final); //
+        }
+      } catch (phoneErr) {
+        return res.status(400).json({ error: phoneErr.message });
+      }
+    }
+
+    // 4. Build Dynamic SQL to allow partial updates and nulls
+    const updates = [];
+    const params = [];
+
+    if (username !== undefined) { updates.push('username = ?'); params.push(username); }
+    if (passwordHash !== undefined) { updates.push('password = ?'); params.push(passwordHash); }
+    if (phone_country_code !== undefined) { updates.push('phone_country_code = ?'); params.push(phone_country_code); }
+    if (emailEnc !== undefined) { updates.push('email_enc = ?'); params.push(emailEnc); }
+    if (phoneEnc !== undefined) { updates.push('phone_number_enc = ?'); params.push(phoneEnc); }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'no_fields_to_update' });
+    }
+
+    const sql = `UPDATE loginTable SET ${updates.join(', ')} WHERE userID = ?`;
+    params.push(String(userID));
+
+    const [result] = await pool.execute(sql, params);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'user_not_found' });
+    }
+
+    return res.json({ ok: true, message: 'User identity updated successfully' });
+  } catch (err) {
+    // Handle Duplicate Entry Errors (e.g., if new email/phone is already taken)
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ error: 'duplicate_identifier', message: 'Email, phone, or username already in use' });
+    }
+    console.error('Update Identity Error:', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
 // After other app.use(...) and router mounts
 try {
   const adminRouter = require('./routes/admin');
