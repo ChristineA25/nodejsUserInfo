@@ -10,20 +10,6 @@ const { pool } = require('../db'); // mysql2/promise pool
 // External items service (53a4) base URL, e.g. https://nodejs-production-53a4.up.railway.app
 const ITEMS_SERVICE_BASE = process.env.ITEMS_SERVICE_BASE;
 
-const bcrypt = require('bcryptjs');
-const crypto = require('crypto');
-
-// Ensure DET_KEY is loaded from your environment variables as seen in app.js
-const DET_KEY = Buffer.from(process.env.DETERMINISTIC_KEY, 'base64');
-
-function detTokenBase64(plain) {
-  if (plain === null || plain === undefined || plain === '') return null;
-  const mac = crypto.createHmac('sha256', DET_KEY)
-    .update(String(plain), 'utf8')
-    .digest();
-  return mac.toString('base64');
-}
-
 /* ------------------------------------------------------------------ */
 /*                         USER BLACKLIST APIs                         */
 /* ------------------------------------------------------------------ */
@@ -198,57 +184,6 @@ router.put('/blacklist', async (req, res) => {
     return res.status(500).json({ error: 'server_error' });
   } finally {
     conn.release();
-  }
-});
-
-// Add these requires if they aren't at the top of your route file
-const bcrypt = require('bcryptjs');
-const crypto = require('crypto');
-
-router.put('/update-credentials', async (req, res) => {
-  try {
-    const { 
-      userID, 
-      newPassword, 
-      phone_country_code, 
-      email, 
-      phone_number 
-    } = req.body;
-
-    if (!userID) return res.status(400).json({ error: 'userID_required' });
-
-    // 1. Password Hashing (12 rounds as per app.js)
-    const passwordHash = newPassword ? await bcrypt.hash(String(newPassword), 12) : null;
-
-    // 2. Encryption Helper (must match app.js DET_KEY logic)
-    const encrypt = (val) => {
-      if (!val) return null;
-      const key = Buffer.from(process.env.DETERMINISTIC_KEY, 'base64');
-      return crypto.createHmac('sha256', key).update(String(val).trim().toLowerCase()).digest('base64');
-    };
-
-    const emailEnc = email ? encrypt(email) : null;
-    const phoneEnc = phone_number ? encrypt(phone_number) : null;
-    const countryCode = phone_country_code || null;
-
-    // 3. Update Database
-    const sql = `
-      UPDATE loginTable 
-      SET 
-        password = COALESCE(?, password), 
-        phone_country_code = ?, 
-        email_enc = ?, 
-        phone_number_enc = ? 
-      WHERE userID = ?`;
-
-    const [result] = await pool.execute(sql, [passwordHash, countryCode, emailEnc, phoneEnc, String(userID)]);
-
-    if (result.affectedRows === 0) return res.status(404).json({ error: 'user_not_found' });
-
-    return res.json({ ok: true, message: 'Credentials updated' });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: 'server_error' });
   }
 });
 
