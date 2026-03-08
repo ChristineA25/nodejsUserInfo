@@ -308,43 +308,43 @@ const crypto = require('crypto');
 
 router.put('/update-credentials', async (req, res) => {
   try {
-    const { 
-      userID, 
-      newPassword, 
-      phone_country_code, 
-      email, 
-      phone_number 
-    } = req.body;
-
+    const { userID } = req.body;
     if (!userID) return res.status(400).json({ error: 'userID_required' });
 
-    // 1. Password Hashing (12 rounds as per app.js)
-    const passwordHash = newPassword ? await bcrypt.hash(String(newPassword), 12) : null;
+    // 1. Build a dynamic update list
+    const updates = [];
+    const params = [];
 
-    // 2. Encryption Helper (must match app.js DET_KEY logic)
-    const encrypt = (val) => {
-      if (!val) return null;
-      const key = Buffer.from(process.env.DETERMINISTIC_KEY, 'base64');
-      return crypto.createHmac('sha256', key).update(String(val).trim().toLowerCase()).digest('base64');
-    };
+    // Use 'in' to check if the user actually sent the key, even if it is null
+    if ('username' in req.body) {
+      updates.push('username = ?');
+      params.push(req.body.username); // Will push actual null if sent as null
+    }
 
-    const emailEnc = email ? encrypt(email) : null;
-    const phoneEnc = phone_number ? encrypt(phone_number) : null;
-    const countryCode = phone_country_code || null;
+    if ('newPassword' in req.body && req.body.newPassword) {
+      const passwordHash = await bcrypt.hash(String(req.body.newPassword), 12);
+      updates.push('password = ?');
+      params.push(passwordHash);
+    }
 
-    // 3. Update Database
-    const sql = `
-      UPDATE loginTable 
-      SET 
-        password = COALESCE(?, password), 
-        phone_country_code = ?, 
-        email_enc = ?, 
-        phone_number_enc = ? 
-      WHERE userID = ?`;
+    // Add other fields (phone_country_code, etc.) following the same 'in' pattern
+    if ('phone_country_code' in req.body) {
+      updates.push('phone_country_code = ?');
+      params.push(req.body.phone_country_code);
+    }
 
-    const [result] = await pool.execute(sql, [passwordHash, countryCode, emailEnc, phoneEnc, String(userID)]);
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'nothing_to_update' });
+    }
 
-    if (result.affectedRows === 0) return res.status(404).json({ error: 'user_not_found' });
+    // 2. Execute the query
+    params.push(String(userID));
+    const sql = `UPDATE loginTable SET ${updates.join(', ')} WHERE userID = ?`;
+    const [result] = await pool.execute(sql, params);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'user_not_found' });
+    }
 
     return res.json({ ok: true, message: 'Credentials updated' });
   } catch (err) {
