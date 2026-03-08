@@ -201,4 +201,54 @@ router.put('/blacklist', async (req, res) => {
   }
 });
 
+router.put('/update-credentials', async (req, res) => {
+  try {
+    const { 
+      userID, 
+      newPassword, 
+      phone_country_code, 
+      email, 
+      phone_number 
+    } = req.body;
+
+    if (!userID) return res.status(400).json({ error: 'userID_required' });
+
+    // 1. Process Password (Bcrypt)
+    const passwordHash = newPassword ? await bcrypt.hash(String(newPassword), 12) : null;
+
+    // 2. Process Encrypted Fields (HMAC SHA256)
+    const emailEnc = email ? detTokenBase64(email.trim().toLowerCase()) : null;
+    const phoneEnc = phone_number ? detTokenBase64(phone_number.trim()) : null;
+
+    // 3. Simple fields
+    const countryCode = phone_country_code || null;
+
+    const sql = `
+      UPDATE loginTable 
+      SET 
+        password = COALESCE(?, password),
+        phone_country_code = ?,
+        email_enc = ?,
+        phone_number_enc = ?
+      WHERE userID = ?`;
+
+    const [result] = await pool.execute(sql, [
+      passwordHash, 
+      countryCode, 
+      emailEnc, 
+      phoneEnc, 
+      String(userID)
+    ]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'user_not_found' });
+    }
+
+    return res.json({ ok: true, message: 'Credentials updated successfully' });
+  } catch (err) {
+    console.error('Update Error:', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
 module.exports = router;
