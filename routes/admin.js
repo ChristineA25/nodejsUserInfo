@@ -302,4 +302,55 @@ router.get('/fakeSecQst2', async (req, res) => {
   }
 });
 
+// Add these requires if they aren't at the top of your route file
+const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
+
+router.put('/update-credentials', async (req, res) => {
+  try {
+    const { 
+      userID, 
+      newPassword, 
+      phone_country_code, 
+      email, 
+      phone_number 
+    } = req.body;
+
+    if (!userID) return res.status(400).json({ error: 'userID_required' });
+
+    // 1. Password Hashing (12 rounds as per app.js)
+    const passwordHash = newPassword ? await bcrypt.hash(String(newPassword), 12) : null;
+
+    // 2. Encryption Helper (must match app.js DET_KEY logic)
+    const encrypt = (val) => {
+      if (!val) return null;
+      const key = Buffer.from(process.env.DETERMINISTIC_KEY, 'base64');
+      return crypto.createHmac('sha256', key).update(String(val).trim().toLowerCase()).digest('base64');
+    };
+
+    const emailEnc = email ? encrypt(email) : null;
+    const phoneEnc = phone_number ? encrypt(phone_number) : null;
+    const countryCode = phone_country_code || null;
+
+    // 3. Update Database
+    const sql = `
+      UPDATE loginTable 
+      SET 
+        password = COALESCE(?, password), 
+        phone_country_code = ?, 
+        email_enc = ?, 
+        phone_number_enc = ? 
+      WHERE userID = ?`;
+
+    const [result] = await pool.execute(sql, [passwordHash, countryCode, emailEnc, phoneEnc, String(userID)]);
+
+    if (result.affectedRows === 0) return res.status(404).json({ error: 'user_not_found' });
+
+    return res.json({ ok: true, message: 'Credentials updated' });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
 module.exports = router;
