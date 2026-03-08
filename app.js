@@ -668,7 +668,7 @@ app.put('/api/user/update-identity', async (req, res) => {
     if (phone_number !== undefined || phoneE164 !== undefined) {
       updates.push('phone_number_enc = ?');
       try {
-        if (phone_number === null && phoneE164 === null) {
+        if (phone_number === null && (phoneE164 === null || phoneE164 === undefined)) {
           params.push(null);
         } else {
           const e164 = buildE164({ phoneE164, phone_country_code, phone_number });
