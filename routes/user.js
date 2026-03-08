@@ -10,6 +10,20 @@ const { pool } = require('../db'); // mysql2/promise pool
 // External items service (53a4) base URL, e.g. https://nodejs-production-53a4.up.railway.app
 const ITEMS_SERVICE_BASE = process.env.ITEMS_SERVICE_BASE;
 
+const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
+
+// Ensure DET_KEY is loaded from your environment variables as seen in app.js
+const DET_KEY = Buffer.from(process.env.DETERMINISTIC_KEY, 'base64');
+
+function detTokenBase64(plain) {
+  if (plain === null || plain === undefined || plain === '') return null;
+  const mac = crypto.createHmac('sha256', DET_KEY)
+    .update(String(plain), 'utf8')
+    .digest();
+  return mac.toString('base64');
+}
+
 /* ------------------------------------------------------------------ */
 /*                         USER BLACKLIST APIs                         */
 /* ------------------------------------------------------------------ */
