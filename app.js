@@ -96,6 +96,21 @@ app.get('/api/user/blacklist', async (req, res) => {
   }
 });
 
+
+async function getRegionIdFromPhoneCode(phoneCountryCode) {
+  if (!phoneCountryCode) return null;
+
+  const [rows] = await pool.execute(
+    `SELECT regionID
+     FROM phoneInfo
+     WHERE regionPhoneCode = ?
+     LIMIT 1`,
+    [phoneCountryCode]
+  );
+
+  return rows.length > 0 ? rows[0].regionID : null;
+}
+
 /**
  * POST /api/user/blacklist
  * Body: { userID, itemID }
