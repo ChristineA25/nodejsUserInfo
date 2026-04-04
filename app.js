@@ -286,6 +286,13 @@ app.put('/api/user/allergens', async (req, res) => {
   }
 });
 
+
+let displayTime = null;
+
+if (identifierType === 'phone') {
+  displayTime = await getRegionIdFromPhoneCode(phone_country_code);
+}
+
 /* ------------------------------------------------------------------ */
 /* API: Signup */
 /* ------------------------------------------------------------------ */
