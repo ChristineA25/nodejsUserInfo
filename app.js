@@ -664,6 +664,17 @@ app.put('/api/user/update-identity', async (req, res) => {
 
     // 2. Password (Bcrypt Hash or Null)
     if (password !== undefined) {
+      // ✅ FIX: STRICT PASSWORD LENGTH GUARD
+      if (password !== null) {
+        const passStr = String(password);
+        if (passStr.length < 8 || passStr.length > 254) {
+          return res.status(400).json({ 
+            error: 'invalid_password_length',
+            message: 'Password must be between 8 and 254 characters.' 
+          });
+        }
+      }
+
       updates.push('password = ?');
       const hash = password === null ? null : await bcrypt.hash(String(password), 12);
       params.push(hash);
