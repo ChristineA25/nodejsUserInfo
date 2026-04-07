@@ -583,6 +583,7 @@ app.put('/api/user/displayTime', async (req, res) => {
   }
 });
 
+
 /**
  * API: Admin Update User Password
  * PUT /api/admin/update-password
@@ -590,25 +591,43 @@ app.put('/api/user/displayTime', async (req, res) => {
  */
 app.put('/api/admin/update-password', async (req, res) => {
   try {
-    const { userID, newPassword } = req.body || {};
+    const { userID, newPassword } = req.body ?? {};
 
-    if (!userID) return res.status(400).json({ error: 'userID_required' });
-    if (!newPassword || newPassword.length < 6) {
-      return res.status(400).json({ error: 'password_too_short' });
+    // ✅ Existing validation
+    if (!userID) {
+      return res.status(400).json({ error: 'userID_required' });
     }
 
-    // Hash the password with 12 rounds to match existing records
+    // ✅ NEW: strict password length guard (DO NOT REMOVE)
+    if (
+      typeof newPassword !== 'string' ||
+      newPassword.length < 8 ||
+      newPassword.length > 254
+    ) {
+      return res.status(400).json({
+        error: 'invalid_password_length',
+        message: 'Password must be between 8 and 254 characters.',
+      });
+    }
+
+    // ✅ Existing behaviour preserved: bcrypt with 12 rounds
     const saltRounds = 12;
     const passwordHash = await bcrypt.hash(String(newPassword), saltRounds);
 
     const sql = 'UPDATE loginTable SET password = ? WHERE userID = ?';
-    const [result] = await pool.execute(sql, [passwordHash, String(userID)]);
+    const [result] = await pool.execute(sql, [
+      passwordHash,
+      String(userID),
+    ]);
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'user_not_found' });
     }
 
-    return res.json({ ok: true, message: 'Password updated successfully' });
+    return res.json({
+      ok: true,
+      message: 'Password updated successfully',
+    });
   } catch (err) {
     console.error('Update Password Error:', err);
     return res.status(500).json({ error: 'server_error' });
